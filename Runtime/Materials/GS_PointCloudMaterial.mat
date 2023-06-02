@@ -8,7 +8,7 @@ Material:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_Name: GS_PointCloudMaterial
-  m_Shader: {fileID: 4800000, guid: 2cededd7517b52849a559dc9fe70272b, type: 3}
+  m_Shader: {fileID: 4800000, guid: 4ad3fc83a34b349409e6a98fefd4eb7e, type: 3}
   m_ValidKeywords: []
   m_InvalidKeywords:
   - _EMISSION
