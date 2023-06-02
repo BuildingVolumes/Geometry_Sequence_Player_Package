@@ -8,15 +8,15 @@ Shader "Pointcloud/Pointcloud"
 {
     Properties
     {
-        _PointSize("PointSize", Range(0, 0.02)) = 0.01
+        _PointSize("PointSize", Range(0, 0.1)) = 0.01
         _DistanceScale("DistanceScale", Range(0, 2.0)) = 1.3
         _MinPointSize("MinPointSize", Range(0, 0.1)) = 0.002
-        _MaxX("MaxX", Range(-10, 10)) = 10
-        _MinX("MinX", Range(-10, 10)) = -10
-        _MaxZ("MaxZ", Range(-10, 10)) = 10
-        _MinZ("MinZ", Range(-10, 10)) = -10
-        _MaxY("MaxY", Range(-10, 10)) = 10
-        _MinY("MinY", Range(-10, 10)) = -10
+        _MaxX("MaxX", Range(-1000, 1000)) = 1000
+        _MinX("MinX", Range(-1000, 1000)) = -1000
+        _MaxZ("MaxZ", Range(-1000, 1000)) = 1000
+        _MinZ("MinZ", Range(-1000, 1000)) = -1000
+        _MaxY("MaxY", Range(-1000, 1000)) = 1000
+        _MinY("MinY", Range(-1000, 1000)) = -1000
     }
         SubShader
     {

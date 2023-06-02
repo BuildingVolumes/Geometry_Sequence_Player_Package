@@ -177,7 +177,7 @@ namespace GeometrySequence.Streaming
                     return false;
                 }
 
-                meshRenderer.material = meshMaterial;
+                meshRenderer.material = new Material(meshMaterial);
                 meshRenderer.material.SetTexture("_MainTex", texture);
             }
 
@@ -189,7 +189,7 @@ namespace GeometrySequence.Streaming
                     return false;
                 }
 
-                meshRenderer.material = pointcloudMaterial;
+                meshRenderer.material = new Material(pointcloudMaterial);
             }
 
             return true;
