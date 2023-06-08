@@ -168,6 +168,9 @@ namespace GeometrySequence.Streaming
             if (!buffering)
                 return;
 
+            if (currentPlaybackFrame < 0 || currentPlaybackFrame > totalFrames)
+                return;
+
             //Delete frames from buffer that are outside our current buffer range
             //which keeps our buffer clean in case of skips or lags
             DeleteFramesOutsideOfBufferRange(currentPlaybackFrame);

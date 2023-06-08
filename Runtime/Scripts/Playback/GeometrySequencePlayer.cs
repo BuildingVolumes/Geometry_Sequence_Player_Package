@@ -157,10 +157,8 @@ namespace GeometrySequence.Streaming
         {
             if(stream != null)
             {
-                playbackTimeMs = frame * stream.targetFrameTimeMs;
-                if (!play)
-                    stream.UpdateFrame(playbackTimeMs);
-                return true;
+                float time = (frame * stream.targetFrameTimeMs) / 1000;
+                return GoToTime(time);
             }
 
             return false;
@@ -171,11 +169,20 @@ namespace GeometrySequence.Streaming
         /// </summary>
         /// <param name="timeInSeconds"></param>
         /// <returns></returns>
-        public void GoToTime(float timeInSeconds)
+        public bool GoToTime(float timeInSeconds)
         {
+            if (timeInSeconds < 0 || timeInSeconds > GetTotalTime())
+                return false;
+
             playbackTimeMs = timeInSeconds * 1000;
+
             if (!play)
+            {
                 stream.UpdateFrame(playbackTimeMs);
+                return true;
+            }
+
+            return false;
         }
 
 
