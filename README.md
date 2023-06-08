@@ -1,5 +1,5 @@
 # Unity Geometry Sequence Streaming Package
-This repository only holds the Unity package for the [Unity Geometry Sequence Streaming Project](https://github.com/Elite-Volumetric-Capture-Sqad/Unity_Geometry_Sequence_Streaming).
+This repository holds just the Unity package for the [Unity Geometry Sequence Streamer](https://github.com/Elite-Volumetric-Capture-Sqad/Unity_Geometry_Sequence_Streaming).
 For more info, please go to the main repository! If you only want to install the package, you're right here.
 
 ## Install package
