@@ -12,6 +12,7 @@ namespace GeometrySequence.Streaming
     {
         public string relativePath = "";
         public string absolutePath = "";
+        public float targetPlaybackFPS = 30;
         public GeometrySequenceStream.PathType pathRelation;
         bool loadNewSequence = false;
         bool streamIsReady = false;
@@ -28,7 +29,7 @@ namespace GeometrySequence.Streaming
             {
                 if (relativePath != string.Empty)
                 {
-                    streamIsReady = stream.ChangeSequence(absolutePath, 30);
+                    streamIsReady = stream.ChangeSequence(absolutePath, targetPlaybackFPS);
                 }
 
                 loadNewSequence = false;

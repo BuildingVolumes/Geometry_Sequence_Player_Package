@@ -8,6 +8,7 @@ namespace GeometrySequence.Streaming
     {
         public string relativePath;
         public GeometrySequenceStream.PathType pathRelation;
+        public float targetPlaybackFPS = 30;
 
         public override Playable CreatePlayable(PlayableGraph graph, GameObject owner)
         {
@@ -16,6 +17,7 @@ namespace GeometrySequence.Streaming
             GeometrySequenceBehaviour geoSequenceBehaviour = playable.GetBehaviour();
             geoSequenceBehaviour.relativePath = relativePath;
             geoSequenceBehaviour.pathRelation = pathRelation;
+            geoSequenceBehaviour.targetPlaybackFPS = targetPlaybackFPS;
 
             return playable;
         }

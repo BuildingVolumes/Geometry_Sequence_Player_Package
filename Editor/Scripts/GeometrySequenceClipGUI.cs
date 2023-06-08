@@ -13,6 +13,7 @@ namespace GeometrySequence.Streaming
         SerializedProperty absolutePathToSequence;
         SerializedProperty pathRelation;
         SerializedProperty relativePath;
+        SerializedProperty targetPlaybackFPS;
 
         GeometrySequenceStream.PathType enumforDisplay; 
 
@@ -20,6 +21,7 @@ namespace GeometrySequence.Streaming
         {
             pathRelation = serializedObject.FindProperty("pathRelation");
             relativePath = serializedObject.FindProperty("relativePath");
+            targetPlaybackFPS = serializedObject.FindProperty("targetPlaybackFPS");
         }
 
         public override void OnInspectorGUI()
@@ -84,7 +86,7 @@ namespace GeometrySequence.Streaming
             if (pathRelation.enumValueIndex != (int)GeometrySequenceStream.PathType.RelativeToStreamingAssets && relativePath.stringValue.Length > 1)
                 EditorGUILayout.HelpBox("Files are not placed in the StreamingAsset folder. The playback will work on your PC, but likely not if you build/export the project to other devices.", MessageType.Info);
 
-
+            EditorGUILayout.PropertyField(targetPlaybackFPS);
 
             serializedObject.ApplyModifiedProperties();
         }
