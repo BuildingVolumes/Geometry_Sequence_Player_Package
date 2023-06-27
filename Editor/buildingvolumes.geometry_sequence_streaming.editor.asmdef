@@ -1,8 +1,8 @@
 {
-    "name": "makingvolumes.geometry_sequence_streaming.editor",
+    "name": "buildingvolumes.geometry_sequence_streaming.editor",
     "rootNamespace": "",
     "references": [
-        "makingvolumes.geometry_sequence_streaming",
+        "buildingvolumes.geometry_sequence_streaming",
         "Unity.Timeline"
     ],
     "includePlatforms": [

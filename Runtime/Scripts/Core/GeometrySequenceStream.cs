@@ -4,7 +4,7 @@ using Unity.Collections;
 using Unity.Jobs.LowLevel.Unsafe;
 using UnityEditor;
 
-namespace GeometrySequence.Streaming
+namespace BuildingVolumes.Streaming
 {
     public class GeometrySequenceStream : MonoBehaviour
     {

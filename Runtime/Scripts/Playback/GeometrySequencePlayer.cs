@@ -3,9 +3,8 @@ using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
 
-namespace GeometrySequence.Streaming
+namespace BuildingVolumes.Streaming
 {
-
     public class GeometrySequencePlayer : MonoBehaviour
     {
         GeometrySequenceStream stream;

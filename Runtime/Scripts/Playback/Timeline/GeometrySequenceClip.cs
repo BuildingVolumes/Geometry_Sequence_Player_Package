@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Playables;
 
-namespace GeometrySequence.Streaming
+namespace BuildingVolumes.Streaming
 {    public class GeometrySequenceClip : PlayableAsset
     {
         public string relativePath;
