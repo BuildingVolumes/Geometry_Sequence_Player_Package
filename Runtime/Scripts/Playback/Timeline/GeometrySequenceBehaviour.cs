@@ -6,7 +6,7 @@ using System.Runtime.CompilerServices;
 using UnityEngine;
 using UnityEngine.Playables;
 
-namespace GeometrySequence.Streaming
+namespace BuildingVolumes.Streaming
 {
     public class GeometrySequenceBehaviour : PlayableBehaviour
     {

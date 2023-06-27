@@ -1,13 +1,12 @@
 using UnityEditor;
 using UnityEngine;
 using System.IO;
-using GeometrySequence.Streaming;
 using System.Data;
 using System;
 using System.Reflection;
 using System.Runtime.InteropServices.ComTypes;
 
-namespace GeometrySequence.Streaming
+namespace BuildingVolumes.Streaming
 {
 
     [CustomEditor(typeof(GeometrySequencePlayer))]

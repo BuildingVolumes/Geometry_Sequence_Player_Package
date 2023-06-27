@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Timeline;
 
-namespace GeometrySequence.Streaming
+namespace BuildingVolumes.Streaming
 {
     [TrackBindingType(typeof(GeometrySequenceStream))]
     [TrackClipType(typeof(GeometrySequenceClip))]

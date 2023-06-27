@@ -1,12 +1,12 @@
 {
-  "name": "com.makingvolumes.geometry_sequence_streaming",
+  "name": "com.buildingvolumes.geometry_sequence_streaming",
   "version": "1.0.0",
   "displayName": "Geometry Sequence Streaming",
   "description": "This package allows you to stream large pointcloud and mesh sequences (e.g. volumetric video) from disk.",
   "unity": "2020.1",
-  "documentationUrl": "https://stilltodo.com/",
-  "changelogUrl": "https://stilltodo.com/changelog.html",
-  "licensesUrl": "https://stilltodo.com/licensing.html",
+  "documentationUrl": "https://buildingvolumes.github.io/Unity_Geometry_Sequence_Streaming/",
+  "changelogUrl": "https://buildingvolumes.github.io/Unity_Geometry_Sequence_Streaming/docs/about/changelog/",
+  "licensesUrl": "https://buildingvolumes.github.io/Unity_Geometry_Sequence_Streaming/docs/about/license-credits/",
   "dependencies": {
     "com.unity.jobs": "0.70.0-preview.7",
     "com.unity.timeline": "1.6.4"

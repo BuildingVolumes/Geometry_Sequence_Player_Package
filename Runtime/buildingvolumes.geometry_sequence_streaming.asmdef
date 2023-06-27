@@ -1,5 +1,5 @@
 {
-    "name": "makingvolumes.geometry_sequence_streaming",
+    "name": "buildingvolumes.geometry_sequence_streaming",
     "rootNamespace": "",
     "references": [
         "Unity.Timeline"

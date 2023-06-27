@@ -4,7 +4,7 @@ using UnityEngine;
 using UnityEngine.Playables;
 using UnityEngine.Timeline;
 
-namespace GeometrySequence.Streaming
+namespace BuildingVolumes.Streaming
 {
     [CustomEditor(typeof(GeometrySequenceClip))]
     [CanEditMultipleObjects]
