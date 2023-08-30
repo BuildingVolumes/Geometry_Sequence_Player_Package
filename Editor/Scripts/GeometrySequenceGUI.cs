@@ -13,8 +13,6 @@ namespace BuildingVolumes.Streaming
     [CanEditMultipleObjects]
     public class GeometrySequenceGUI : Editor
     {
-        bool showBufferingFoldout;
-        bool showDebugFoldout;
 
         SerializedProperty relativePath;
         SerializedProperty pathToSequence;
@@ -22,8 +20,6 @@ namespace BuildingVolumes.Streaming
         SerializedProperty targetFPS;
         SerializedProperty playAtStart;
         SerializedProperty loopPlay;
-
-
 
         float frameDropShowSeconds = 0.1f;
         float frameDropShowCounter = 0;
@@ -37,12 +33,13 @@ namespace BuildingVolumes.Streaming
             playAtStart = serializedObject.FindProperty("playAtStart");
             loopPlay = serializedObject.FindProperty("loopPlay");
 
+
             GeometrySequencePlayer player = (GeometrySequencePlayer)target;
             player.SetupGeometryStream();
 
             serializedObject.ApplyModifiedProperties();
 
-            
+
         }
 
         public override void OnInspectorGUI()
@@ -107,9 +104,16 @@ namespace BuildingVolumes.Streaming
 
             GUILayout.EndHorizontal();
 
+#if !UNITY_ANDROID
             if(pathRelation.enumValueIndex != (int)GeometrySequenceStream.PathType.RelativeToStreamingAssets && relativePath.stringValue.Length > 1)
-                EditorGUILayout.HelpBox("Files are not placed in the StreamingAsset folder. The playback will work on your PC, but likely not if you build/export the project to other devices.", MessageType.Info);
+                EditorGUILayout.HelpBox("Files are not placed in the StreamingAsset folder. The playback will work on your PC, but likely not if you build/export the project to other devices.", MessageType.Warning);
 
+#endif
+
+#if UNITY_ANDROID
+            if (pathRelation.enumValueIndex != (int)GeometrySequenceStream.PathType.RelativeToPersistentDataPath && relativePath.stringValue.Length > 1)
+                EditorGUILayout.HelpBox("On Android, files should always be put into the devices Persistent Data Path, other folders are not supported! More information in the documentation", MessageType.Error);
+#endif
 
             GUILayout.Space(20);
             GUILayout.Label("Playback Settings", EditorStyles.boldLabel);

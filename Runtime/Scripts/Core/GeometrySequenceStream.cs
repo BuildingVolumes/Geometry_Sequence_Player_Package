@@ -40,7 +40,7 @@ namespace BuildingVolumes.Streaming
         [HideInInspector]
         public Texture2D texture;
 
-        public enum PathType { AbsolutePath, RelativeToDataPath, RelativeToStreamingAssets };
+        public enum PathType { AbsolutePath, RelativeToDataPath, RelativeToPersistentDataPath, RelativeToStreamingAssets };
 
         private void Start()
         {
@@ -300,27 +300,9 @@ namespace BuildingVolumes.Streaming
                 meshRenderer.material.SetTexture("_MainTex", texture);
         }
 
-
-        void CleanupSequence()
+        public void SetupMaterials()
         {
-            if (bufferedReader != null)
-            {
-                bufferedReader.DisposeAllFrames(true, true, true);
-            }
-
-        }
-
-        void CleanupMeshAndTexture()
-        {
-            if (meshObject != null)
-                Destroy(meshObject);
-
-            if (texture != null)
-                Destroy(texture);
-        }
-
-        private void OnEnable()
-        {
+#if UNITY_EDITOR
             //Fill up material slots with default materials
             if (pointcloudMaterial == null)
             {
@@ -343,6 +325,31 @@ namespace BuildingVolumes.Streaming
                     meshMaterial = mat;
                 }
             }
+#endif
+        }
+
+
+        void CleanupSequence()
+        {
+            if (bufferedReader != null)
+            {
+                bufferedReader.DisposeAllFrames(true, true, true);
+            }
+
+        }
+
+        void CleanupMeshAndTexture()
+        {
+            if (meshObject != null)
+                Destroy(meshObject);
+
+            if (texture != null)
+                Destroy(texture);
+        }
+
+        private void OnEnable()
+        {
+           
         }
 
 

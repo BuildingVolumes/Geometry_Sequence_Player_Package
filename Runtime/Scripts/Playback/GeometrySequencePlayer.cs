@@ -14,7 +14,7 @@ namespace BuildingVolumes.Streaming
         [SerializeField]
         string absolutePath = "";
         [SerializeField]
-        PathType pathRelation;
+        GeometrySequenceStream.PathType pathRelation;
 
         [SerializeField]
         bool playAtStart = true;
@@ -26,7 +26,6 @@ namespace BuildingVolumes.Streaming
         float playbackTimeMs = 0;
         bool play = false;
 
-        public enum PathType { AbsolutePath, RelativeToDataPath, RelativeToStreamingAssets };
 
         // Start is called before the first frame update
         void Start()
@@ -43,8 +42,10 @@ namespace BuildingVolumes.Streaming
                 stream = gameObject.GetComponent<GeometrySequenceStream>();
                 if (stream == null)
                     stream = gameObject.AddComponent<GeometrySequenceStream>();
+                stream.SetupMaterials();
             }
         }
+
 
         private void Update()
         {
@@ -72,7 +73,7 @@ namespace BuildingVolumes.Streaming
         /// Returns false when sequence could not be loaded, see Unity Console output for details in this case
         /// </summary>
         /// <param name="path"></param>
-        public bool LoadSequence(string path, PathType relativeTo, float playbackFPS , bool autoplay = false)
+        public bool LoadSequence(string path, GeometrySequenceStream.PathType relativeTo, float playbackFPS , bool autoplay = false)
         {
             if (path.Length < 1)
                 return false;
@@ -83,13 +84,16 @@ namespace BuildingVolumes.Streaming
             play = false;
 
             //Set the correct absolute path depending on the files location
-            if (pathRelation == PathType.RelativeToDataPath)
+            if (pathRelation == GeometrySequenceStream.PathType.RelativeToDataPath)
                 absolutePath = Path.Combine(Application.dataPath, relativePath);
 
-            if (pathRelation == PathType.RelativeToStreamingAssets)
+            if (pathRelation == GeometrySequenceStream.PathType.RelativeToStreamingAssets)
                 absolutePath = Path.Combine(Application.streamingAssetsPath, relativePath);
 
-            if (pathRelation == PathType.AbsolutePath)
+            if (pathRelation == GeometrySequenceStream.PathType.RelativeToPersistentDataPath)
+                absolutePath = Path.Combine(Application.persistentDataPath, relativePath);
+
+            if (pathRelation == GeometrySequenceStream.PathType.AbsolutePath)
                 absolutePath = relativePath;
 
             bool sucess = stream.ChangeSequence(absolutePath, playbackFPS);

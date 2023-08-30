@@ -52,6 +52,9 @@ namespace BuildingVolumes.Streaming
             if (pathRelation == GeometrySequenceStream.PathType.RelativeToStreamingAssets)
                 absolutePath = Path.Combine(Application.streamingAssetsPath, relativePath);
 
+            if (pathRelation == GeometrySequenceStream.PathType.RelativeToPersistentDataPath)
+                absolutePath = Path.Combine(Application.persistentDataPath, relativePath);
+
             if (pathRelation == GeometrySequenceStream.PathType.AbsolutePath)
                 absolutePath = relativePath;
 
