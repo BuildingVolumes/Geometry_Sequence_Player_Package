@@ -358,6 +358,12 @@ namespace BuildingVolumes.Streaming
             CleanupSequence();
         }
 
+        private void Reset()
+        {
+            if (pointcloudMaterial == null && meshMaterial == null)
+                SetupMaterials();
+        }
+
     }
 
 }

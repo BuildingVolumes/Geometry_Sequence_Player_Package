@@ -38,7 +38,7 @@ RenderSettings:
   m_ReflectionIntensity: 1
   m_CustomReflection: {fileID: 0}
   m_Sun: {fileID: 0}
-  m_IndirectSpecularColor: {r: 0.18028378, g: 0.22571412, b: 0.30692285, a: 1}
+  m_IndirectSpecularColor: {r: 0.44402242, g: 0.49316543, b: 0.5722324, a: 1}
   m_UseRadianceAmbientProbe: 0
 --- !u!157 &3
 LightmapSettings:
@@ -133,7 +133,7 @@ GameObject:
   m_Component:
   - component: {fileID: 47858292}
   - component: {fileID: 47858294}
-  - component: {fileID: 47858293}
+  - component: {fileID: 47858295}
   m_Layer: 0
   m_Name: PLYStreamer
   m_TagString: Untagged
@@ -156,7 +156,25 @@ Transform:
   m_Father: {fileID: 0}
   m_RootOrder: 0
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &47858293
+--- !u!114 &47858294
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 47858290}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e2731264125d1524693cb97001b1cfc1, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  relativePath: Samples\Geometry Sequence Streaming\1.0.1\Streaming Samples\ExampleData\Twisty_Box
+  absolutePath: 
+  pathRelation: 1
+  playAtStart: 1
+  loopPlay: 1
+  playbackFPS: 30
+--- !u!114 &47858295
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -171,31 +189,13 @@ MonoBehaviour:
   bufferSize: 12
   useAllThreads: 1
   threadCount: 4
-  pointcloudMaterial: {fileID: 0}
-  meshMaterial: {fileID: 0}
+  pointcloudMaterial: {fileID: 2100000, guid: bbcad6c3341b77645b06192a47c07027, type: 2}
+  meshMaterial: {fileID: 2100000, guid: da8d29e60762f8c4d885f92ca00fc376, type: 2}
   frameDropped: 0
   currentFrameIndex: 0
   targetFrameTimeMs: 0
   smoothedFPS: 0
   texture: {fileID: 0}
---- !u!114 &47858294
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 47858290}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: e2731264125d1524693cb97001b1cfc1, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  relativePath: Samples\Geometry Sequence Streaming\1.0.0\Streaming Samples\ExampleData\Twisty_Box
-  absolutePath: 
-  pathRelation: 1
-  playAtStart: 1
-  loopPlay: 1
-  playbackFPS: 30
 --- !u!1 &1420777152
 GameObject:
   m_ObjectHideFlags: 0

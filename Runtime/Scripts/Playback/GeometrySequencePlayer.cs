@@ -42,7 +42,6 @@ namespace BuildingVolumes.Streaming
                 stream = gameObject.GetComponent<GeometrySequenceStream>();
                 if (stream == null)
                     stream = gameObject.AddComponent<GeometrySequenceStream>();
-                stream.SetupMaterials();
             }
         }
 
