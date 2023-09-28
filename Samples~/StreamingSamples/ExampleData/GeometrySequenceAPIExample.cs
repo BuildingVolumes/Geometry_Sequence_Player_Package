@@ -18,7 +18,7 @@ public class GeometrySequenceAPIExample : MonoBehaviour
 
         //First to load our sequence. In this case the path is inside of the Assets folder (in the Editor, this is also the Data Path),
         //so we set it as relative to our data path. We also set our desired target playback framerate here
-        player.LoadSequence(sequencePath, GeometrySequencePlayer.PathType.RelativeToDataPath, 30);
+        player.LoadSequence(sequencePath, GeometrySequenceStream.PathType.RelativeToDataPath, 30);
 
         //Disable automatic looping and automatic playback.
         player.SetLoopPlay(false);
