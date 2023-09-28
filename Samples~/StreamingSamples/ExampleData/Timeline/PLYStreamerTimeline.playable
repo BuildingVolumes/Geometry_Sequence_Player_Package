@@ -125,5 +125,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 2826f16bb3cd8674b93532ca26ba69ca, type: 3}
   m_Name: GeometrySequenceClip
   m_EditorClassIdentifier: 
-  relativePath: Samples\Geometry Sequence Streaming\1.0.0\Streaming Samples\ExampleData\Twisty_Box
+  relativePath: Samples\Geometry Sequence Streaming\1.0.1\Streaming Samples\ExampleData\Twisty_Box
   pathRelation: 1
+  targetPlaybackFPS: 30
