@@ -1,6 +1,6 @@
 {
   "name": "com.buildingvolumes.geometry_sequence_streaming",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "displayName": "Geometry Sequence Streaming",
   "description": "This package allows you to stream large pointcloud and mesh sequences (e.g. volumetric video) from disk.",
   "unity": "2020.1",

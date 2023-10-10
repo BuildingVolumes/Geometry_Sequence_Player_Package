@@ -30,12 +30,8 @@ namespace BuildingVolumes.Streaming
         // Start is called before the first frame update
         void Start()
         {
-            LoadSequence(relativePath, pathRelation, playbackFPS, playAtStart);
-        }
-
-        private void Reset()
-        {
             SetupGeometryStream();
+            LoadSequence(relativePath, pathRelation, playbackFPS, playAtStart);
         }
 
         public void SetupGeometryStream()
@@ -79,20 +75,24 @@ namespace BuildingVolumes.Streaming
         /// <param name="relativeTo"></param>
         /// <param name="playbackFPS"></param>
         /// <param name="autoplay"></param>
-        /// <returns></returns>
+        /// <returns>True when the sequence could sucessfully be loaded, false if an error has occured</returns>
         public bool LoadSequence(string path, GeometrySequenceStream.PathType relativeTo, float playbackFPS = 30f, bool autoplay = false)
         {
-            this.playbackFPS = playbackFPS;
+            if(path.Length > 0)
+            {
+                this.playbackFPS = playbackFPS;
+                SetPath(path, relativeTo);
+                return ReloadSequence(autoplay);
+            }
 
-            SetPath(path, relativeTo);
-            return ReloadSequence(autoplay);
+            return false;           
         }
 
         /// <summary>
         /// Loads the sequence which is currently set in the player, optionally starts playback.
         /// </summary>
         /// <param name="autoplay">Start playback immediatly after loading</param>
-        /// <returns></returns>
+        /// <returns>True when the sequence could sucessfully be reloaded, false if an error has occured</returns>
         public bool ReloadSequence(bool autoplay = false)
         {
             bool sucess = stream.ChangeSequence(absolutePath, playbackFPS);
@@ -107,11 +107,10 @@ namespace BuildingVolumes.Streaming
         /// </summary>
         /// <param name="path">The relative or absolute path to the new Sequence</param>
         /// <param name="relativeTo">Specifiy to which path your sequence path is relative, or if it is an absolute path</param>
-        /// <returns></returns>
-        public bool SetPath(string path, GeometrySequenceStream.PathType relativeTo)
+        public void SetPath(string path, GeometrySequenceStream.PathType relativeTo)
         {
             if (path.Length < 1)
-                return false;
+                return;
 
             this.relativePath = path;
             pathRelation = relativeTo;
@@ -130,7 +129,7 @@ namespace BuildingVolumes.Streaming
             if (pathRelation == GeometrySequenceStream.PathType.AbsolutePath)
                 absolutePath = this.relativePath;
 
-            return true;
+            return;
         }
 
         /// <summary>

@@ -5,7 +5,7 @@ using UnityEngine;
 
 public class GeometrySequenceAPIExample : MonoBehaviour
 {
-    public string sequencePath = "Samples\\Geometry Sequence Streaming\\1.0.0\\Streaming Samples\\ExampleData\\Twisty_Box";
+    public string sequencePath = "";
     GeometrySequencePlayer player;
 
     int loopsPlayed = 0;

@@ -187,6 +187,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0885a5fe3a56cf04690a8fc44a1380a3, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  parentTransform: {fileID: 0}
   bufferSize: 12
   useAllThreads: 1
   threadCount: 4
@@ -195,6 +196,7 @@ MonoBehaviour:
   frameDropped: 0
   currentFrameIndex: 0
   targetFrameTimeMs: 0
+  elapsedMsSinceLastFrame: 0
   smoothedFPS: 0
   texture: {fileID: 0}
 --- !u!1 &1420777152
