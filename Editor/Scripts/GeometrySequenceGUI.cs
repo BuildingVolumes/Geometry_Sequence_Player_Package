@@ -106,13 +106,27 @@ namespace BuildingVolumes.Streaming
 
 #if !UNITY_ANDROID
             if(pathRelation.enumValueIndex != (int)GeometrySequenceStream.PathType.RelativeToStreamingAssets && relativePath.stringValue.Length > 1)
-                EditorGUILayout.HelpBox("Files are not placed in the StreamingAsset folder. The playback will work on your PC, but likely not if you build/export the project to other devices.", MessageType.Warning);
+            {
+                EditorGUILayout.HelpBox("Files are not placed in the StreamingAsset folder. The playback will work on your PC, but likely not if you build/export the project to other devices. More information here:", MessageType.Warning);
+
+                if (GUILayout.Button("Open Documentation"))
+                {
+                    Application.OpenURL("https://buildingvolumes.github.io/Unity_Geometry_Sequence_Streaming/docs/tutorials/distribution/");
+                }
+            }
 
 #endif
 
 #if UNITY_ANDROID
             if (pathRelation.enumValueIndex != (int)GeometrySequenceStream.PathType.RelativeToPersistentDataPath && relativePath.stringValue.Length > 1)
-                EditorGUILayout.HelpBox("On Android, files should always be put into the devices Persistent Data Path, other folders are not supported! More information in the documentation", MessageType.Error);
+            {
+                EditorGUILayout.HelpBox("On Android, files should always be put into the devices Persistent Data Path, other folders are not supported! More information here:", MessageType.Error);
+
+                if (GUILayout.Button("Open Documentation"))
+                {
+                    Application.OpenURL("https://buildingvolumes.github.io/Unity_Geometry_Sequence_Streaming/docs/tutorials/distribution/");
+                }
+            }
 #endif
 
             GUILayout.Space(20);

@@ -10,7 +10,9 @@ namespace BuildingVolumes.Streaming
     {
         public string pathToSequence { get; private set; }
 
-        public int bufferSize = 12;
+        public Transform parentTransform;
+
+        public int bufferSize = 30;
         public bool useAllThreads = true;
         public int threadCount = 4;
 
@@ -18,16 +20,11 @@ namespace BuildingVolumes.Streaming
         public Material meshMaterial;
 
         bool readerIsReady = false;
-        [HideInInspector]
-        public bool frameDropped = false;
 
-        [HideInInspector]
+        public bool frameDropped = false;
         public int currentFrameIndex = 0;
-        [HideInInspector] 
         public float targetFrameTimeMs = 0;
-        [HideInInspector] 
-        float elapsedMsSinceLastFrame = 0;
-        [HideInInspector] 
+        public float elapsedMsSinceLastFrame = 0;
         public float smoothedFPS = 0f;
 
         MeshTopology meshType = MeshTopology.Points;
@@ -121,8 +118,13 @@ namespace BuildingVolumes.Streaming
         bool SetupMesh()
         {
             meshObject = new GameObject("StreamedMesh");
+            
+            if (parentTransform != null)
+                meshObject.transform.parent = parentTransform;
+
             meshObject.transform.localPosition = Vector3.zero;
             meshObject.transform.localRotation = Quaternion.identity;
+            meshObject.transform.localScale = Vector3.one;
 
             string[] paths;
 

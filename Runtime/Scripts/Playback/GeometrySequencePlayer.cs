@@ -30,8 +30,12 @@ namespace BuildingVolumes.Streaming
         // Start is called before the first frame update
         void Start()
         {
-            SetupGeometryStream();
             LoadSequence(relativePath, pathRelation, playbackFPS, playAtStart);
+        }
+
+        private void Reset()
+        {
+            SetupGeometryStream();
         }
 
         public void SetupGeometryStream()
@@ -72,35 +76,61 @@ namespace BuildingVolumes.Streaming
         /// Returns false when sequence could not be loaded, see Unity Console output for details in this case
         /// </summary>
         /// <param name="path"></param>
-        public bool LoadSequence(string path, GeometrySequenceStream.PathType relativeTo, float playbackFPS , bool autoplay = false)
+        /// <param name="relativeTo"></param>
+        /// <param name="playbackFPS"></param>
+        /// <param name="autoplay"></param>
+        /// <returns></returns>
+        public bool LoadSequence(string path, GeometrySequenceStream.PathType relativeTo, float playbackFPS = 30f, bool autoplay = false)
+        {
+            this.playbackFPS = playbackFPS;
+
+            SetPath(path, relativeTo);
+            return ReloadSequence(autoplay);
+        }
+
+        /// <summary>
+        /// Loads the sequence which is currently set in the player, optionally starts playback.
+        /// </summary>
+        /// <param name="autoplay">Start playback immediatly after loading</param>
+        /// <returns></returns>
+        public bool ReloadSequence(bool autoplay = false)
+        {
+            bool sucess = stream.ChangeSequence(absolutePath, playbackFPS);
+            if (autoplay && sucess)
+                PlayFromStart();
+            
+            return sucess;
+        }
+
+        /// <summary>
+        /// Set a new path in the player, but don't load the sequence. Use ReloadSequence() to actually load it, or LoadSequence() to set and load a sequence.
+        /// </summary>
+        /// <param name="path">The relative or absolute path to the new Sequence</param>
+        /// <param name="relativeTo">Specifiy to which path your sequence path is relative, or if it is an absolute path</param>
+        /// <returns></returns>
+        public bool SetPath(string path, GeometrySequenceStream.PathType relativeTo)
         {
             if (path.Length < 1)
                 return false;
 
-            relativePath = path;
+            this.relativePath = path;
             pathRelation = relativeTo;
-            this.playbackFPS = playbackFPS;
             play = false;
 
             //Set the correct absolute path depending on the files location
             if (pathRelation == GeometrySequenceStream.PathType.RelativeToDataPath)
-                absolutePath = Path.Combine(Application.dataPath, relativePath);
+                absolutePath = Path.Combine(Application.dataPath, this.relativePath);
 
             if (pathRelation == GeometrySequenceStream.PathType.RelativeToStreamingAssets)
-                absolutePath = Path.Combine(Application.streamingAssetsPath, relativePath);
+                absolutePath = Path.Combine(Application.streamingAssetsPath, this.relativePath);
 
             if (pathRelation == GeometrySequenceStream.PathType.RelativeToPersistentDataPath)
-                absolutePath = Path.Combine(Application.persistentDataPath, relativePath);
+                absolutePath = Path.Combine(Application.persistentDataPath, this.relativePath);
 
             if (pathRelation == GeometrySequenceStream.PathType.AbsolutePath)
-                absolutePath = relativePath;
+                absolutePath = this.relativePath;
 
-            bool sucess = stream.ChangeSequence(absolutePath, playbackFPS);
-
-            if (autoplay && sucess)
-                PlayFromStart();
-
-            return sucess;
+            return true;
         }
 
         /// <summary>
@@ -192,9 +222,23 @@ namespace BuildingVolumes.Streaming
         /// Gets the absolute path to the folder containing the sequence
         /// </summary>
         /// <returns></returns>
-        public string GetSequencePath()
+        public string GetAbsoluteSequencePath()
         {
-            return stream.pathToSequence;
+            return absolutePath;
+        }
+
+        /// <summary>
+        /// Get's the relative path to the sequence directory. Get the path which it is relative to with GetRelativeTo()
+        /// </summary>
+        /// <returns></returns>
+        public string GetRelativeSequencePath()
+        {
+            return relativePath;
+        }
+
+        public GeometrySequenceStream.PathType GetRelativeTo()
+        {
+            return pathRelation;
         }
 
         /// <summary>
