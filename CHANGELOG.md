@@ -1,5 +1,15 @@
 # Changelog
 
+Version 1.0.3
+
+Added features:
+
+- Thumbnails will now show when adding a sequence via the editor
+- Looping is now much smoother and should not lag anymore
+- Added Playback Events that can be used to see when a scene has been loaded, started playing ect.
+- Added more refined media loading via script API
+- Added Stop functionality to the player
+
 Version 1.0.2
 
 Added features:
