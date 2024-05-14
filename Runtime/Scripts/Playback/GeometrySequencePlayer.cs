@@ -306,6 +306,10 @@ namespace BuildingVolumes.Streaming
             return relativePath;
         }
 
+        /// <summary>
+        /// Get the location to to which the relativePath is relative to.
+        /// </summary>
+        /// <returns>The relative location.</returns>
         public GeometrySequenceStream.PathType GetRelativeTo()
         {
             return pathRelation;
