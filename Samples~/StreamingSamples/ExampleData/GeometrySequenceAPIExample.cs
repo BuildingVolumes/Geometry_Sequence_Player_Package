@@ -17,16 +17,15 @@ public class GeometrySequenceAPIExample : MonoBehaviour
         player = GetComponent<GeometrySequencePlayer>();
 
         //First to load our sequence. In this case the path is inside of the Assets folder (in the Editor, this is also the Data Path),
-        //so we set it as relative to our data path. We also set our desired target playback framerate here
-        player.LoadSequence(sequencePath, GeometrySequenceStream.PathType.RelativeToDataPath, 30);
+        //so we set it as relative to our data path. We also set our desired target playback framerate here. 
+        //Enabeling the autostart flag means that our media will play as soon as possible after being loaded
+        player.OpenSequence(sequencePath, GeometrySequenceStream.PathType.RelativeToDataPath, 30, true);
 
-        //Disable automatic looping and automatic playback.
+        //Disable automatic looping
         player.SetLoopPlay(false);
-        player.SetAutoStart(false);
 
-        //Now we start the playback from the start. In this case, you could also just set the autostart variable to true,
-        //inside of the LoadSequence function
-        player.PlayFromStart();
+        //Subscribe to the player events (optional, just needed if your app needs access to some of the events!)
+        player.playbackEvents.AddListener(PlaybackEventListener);
     }
 
     // Update is called once per frame
@@ -45,5 +44,39 @@ public class GeometrySequenceAPIExample : MonoBehaviour
             loopsPlayed++;
         }
 
+    }
+
+    //With this function, we can receive events, which give us information about the playback state.
+    //You need to subscribe to the events first (here in the Start() function). You also need to
+    //unsubscribe from the events, otherwise memory leaks occur (here in the OnDestroy() function).
+    //The events are not really used in this example, but we print them out so that you can watch them unfold in the console.
+    void PlaybackEventListener(GeometrySequencePlayer player, GeometrySequencePlayer.GSPlayerEvents events)
+    {
+        switch (events)
+        {
+            case GeometrySequencePlayer.GSPlayerEvents.PlaybackFinished:
+                print("Playback Finished!");
+                break;
+            case GeometrySequencePlayer.GSPlayerEvents.PlaybackStarted:
+                print("Playback Started!");
+                break;
+            case GeometrySequencePlayer.GSPlayerEvents.BufferingStarted:
+                print("Buffering Started!");
+                break;
+            case GeometrySequencePlayer.GSPlayerEvents.BufferingCompleted:
+                print("Buffering Completed!");
+                break;
+            case GeometrySequencePlayer.GSPlayerEvents.FrameDropped:
+                print("Frame Dropped!");
+                break;
+            case GeometrySequencePlayer.GSPlayerEvents.Looped:
+                print("Looped!");
+                break;
+        }
+    }
+
+    private void OnDestroy()
+    {
+        player.playbackEvents.RemoveListener(PlaybackEventListener);
     }
 }

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Collections.Generic;
 using Unity.Collections;
@@ -111,7 +111,10 @@ namespace BuildingVolumes.Streaming
             frameBuffer = new Frame[bufferSize];
 
             for (int i = 0; i < frameBuffer.Length; i++)
+            {
                 frameBuffer[i].isDisposed = true;
+                frameBuffer[i].playbackIndex = -1;
+            }
 
             return true;
         }
@@ -140,7 +143,7 @@ namespace BuildingVolumes.Streaming
 
                 if (plyFilePaths.Length == 0)
                 {
-                    UnityEngine.Debug.LogError("Could not find any .ply files in the directory!");
+                    UnityEngine.Debug.LogError("Could not find any .dds files in the directory!");
                     return false;
                 }
             }
@@ -171,20 +174,33 @@ namespace BuildingVolumes.Streaming
             if (currentPlaybackFrame < 0 || currentPlaybackFrame > totalFrames)
                 return;
 
+            //Debug.Log("Buffer frame routine, current Frame: " + currentPlaybackFrame);
+
             //Delete frames from buffer that are outside our current buffer range
             //which keeps our buffer clean in case of skips or lags
             DeleteFramesOutsideOfBufferRange(currentPlaybackFrame);
 
-            //Find out which frames we need to buffer, meaning which frames from the
-            //current playback index to the max needed buffered frames are not already in the buffer 
+            //Find out which frames we need to buffer. The buffer is a ring
+            //buffer, so that when the playback loops, the whole clip doesn't need
+            //to reload, but the frames should be ready.
             int minPlaybackIndex = currentPlaybackFrame;
-            int maxPlaybackIndex = currentPlaybackFrame + bufferSize;
+            int maxPlaybackIndex = currentPlaybackFrame + (bufferSize - 1);
+            if (maxPlaybackIndex >= totalFrames)
+                maxPlaybackIndex -= (totalFrames - 1);
             List<int> framesToBuffer = new List<int>();
 
-            for (int i = minPlaybackIndex; i <= maxPlaybackIndex; i++)
+            int playbackIndex = minPlaybackIndex;
+            for (int i = 0; i < bufferSize; i++)
             {
-                if (GetBufferIndexForPlaybackIndex(i) == -1)
-                    framesToBuffer.Add(i);
+                if (playbackIndex >= totalFrames)
+                    playbackIndex = 0;
+
+                if (GetBufferIndexForPlaybackIndex(playbackIndex) == -1)
+                {
+                    framesToBuffer.Add(playbackIndex);
+                }
+
+                playbackIndex++;
             }
 
             for (int i = 0; i < frameBuffer.Length; i++)
@@ -224,6 +240,22 @@ namespace BuildingVolumes.Streaming
             JobHandle.ScheduleBatchedJobs();
         }
 
+        public Frame LoadSingleFrame(string geoPath, string texturePath)
+        {
+            Frame newFrame = new Frame();
+            newFrame.meshArray = Mesh.AllocateWritableMeshData(1);
+            newFrame = ScheduleGeometryReadJob(newFrame, geoPath);
+            newFrame.geoJobHandle.Complete();
+
+            if(texturePath != null && texturePath.Length > 0)
+            {
+                newFrame = ScheduleTextureJob(newFrame, texturePath);
+                newFrame.textureJobHandle.Complete();
+            }
+
+            return newFrame;
+        }
+
 
         /// <summary>
         /// Deletes frames that are either in the past of current Frame index,
@@ -233,16 +265,40 @@ namespace BuildingVolumes.Streaming
         /// <param name="currentFrameIndex">The currently shown/played back frame</param>
         public void DeleteFramesOutsideOfBufferRange(int currentFrameIndex)
         {
+            //We want to treat the buffer as a ring buffer, so that when we're looping,
+            //the playback doesn't stutter. This means if the current Frame index is near
+            //the end of the buffer, our buffer range extends to the beginning again
+
+            int minFrame = currentFrameIndex;
+            int maxframe = currentFrameIndex + bufferSize;
+            if (maxframe >= totalFrames)
+                maxframe -= (totalFrames - 1);
+
             for (int i = 0; i < frameBuffer.Length; i++)
             {
-                if (frameBuffer[i].playbackIndex < currentFrameIndex || frameBuffer[i].playbackIndex > currentFrameIndex + bufferSize)
+                bool dispose = true;
+                int playbackIndex = frameBuffer[i].playbackIndex;
+
+                if(minFrame < maxframe)
+                {
+                    if (playbackIndex >= minFrame && playbackIndex < maxframe)
+                        dispose = false;
+                }
+
+                else
+                {
+                    if (playbackIndex >= maxframe || playbackIndex < maxframe)
+                        dispose = false;
+                }            
+
+                if (dispose)
                 {
                     if (!frameBuffer[i].isDisposed)
                     {
-                        DisposeFrame(i, false, false);
+                        bool disposed = DisposeFrame(i, false, false);
                     }
-
                 }
+                    
             }
         }
 

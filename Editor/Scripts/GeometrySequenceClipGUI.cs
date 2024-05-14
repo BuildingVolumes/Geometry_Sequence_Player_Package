@@ -28,6 +28,8 @@ namespace BuildingVolumes.Streaming
         {
             serializedObject.Update();
 
+            GeometrySequenceClip clip = (GeometrySequenceClip)target;
+
             GUILayout.Label("Set Sequence", EditorStyles.boldLabel);
 
             EditorGUILayout.PropertyField(pathRelation);
@@ -64,6 +66,8 @@ namespace BuildingVolumes.Streaming
                                 pathRelation.enumValueFlag = (int)GeometrySequenceStream.PathType.AbsolutePath;
                             }
 
+                            clip.ShowThumbnail(path);
+                            
                         }
 
                         else
@@ -79,6 +83,7 @@ namespace BuildingVolumes.Streaming
             if (GUILayout.Button("Clear", GUILayout.Width(50)))
             {
                 relativePath.stringValue = "";
+                clip.ClearThumbnail();
             }
 
             GUILayout.EndHorizontal();

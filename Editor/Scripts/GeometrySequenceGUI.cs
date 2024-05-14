@@ -20,9 +20,11 @@ namespace BuildingVolumes.Streaming
         SerializedProperty targetFPS;
         SerializedProperty playAtStart;
         SerializedProperty loopPlay;
+        SerializedProperty playbackEvents;
 
         float frameDropShowSeconds = 0.1f;
         float frameDropShowCounter = 0;
+        bool eventFoldout;
 
         private void OnEnable()
         {
@@ -32,14 +34,14 @@ namespace BuildingVolumes.Streaming
             targetFPS = serializedObject.FindProperty("playbackFPS");
             playAtStart = serializedObject.FindProperty("playAtStart");
             loopPlay = serializedObject.FindProperty("loopPlay");
+            playbackEvents = serializedObject.FindProperty("playbackEvents");
 
 
             GeometrySequencePlayer player = (GeometrySequencePlayer)target;
             player.SetupGeometryStream();
+            
 
             serializedObject.ApplyModifiedProperties();
-
-
         }
 
         public override void OnInspectorGUI()
@@ -56,8 +58,19 @@ namespace BuildingVolumes.Streaming
 
             relativePath.stringValue =  GUILayout.TextField(relativePath.stringValue);
 
+            bool openSequence = false; //Workaround for a Unity GUI bug (EndLayoutGroup: BeginLayoutGroup must be called first)
             GUILayout.BeginHorizontal();
             if (GUILayout.Button("Open Sequence"))
+                openSequence = true;                
+
+            if (GUILayout.Button("Clear", GUILayout.Width(50)))
+            {
+                relativePath.stringValue = "";
+                player.ClearThumbnail();
+            }
+            GUILayout.EndHorizontal();
+
+            if (openSequence)
             {
                 string path = EditorUtility.OpenFolderPanel("Open a folder that contains a Geometry Sequence", relativePath.stringValue, "");
 
@@ -85,6 +98,8 @@ namespace BuildingVolumes.Streaming
                                 pathRelation.enumValueFlag = (int)GeometrySequenceStream.PathType.AbsolutePath;
                             }
 
+                            player.ShowThumbnail(path);
+
                         }
 
                         else
@@ -96,13 +111,6 @@ namespace BuildingVolumes.Streaming
                     }
                 }
             }
-
-            if (GUILayout.Button("Clear", GUILayout.Width(50)))
-            {
-                relativePath.stringValue = "";
-            }
-
-            GUILayout.EndHorizontal();
 
 #if !UNITY_ANDROID
             if(pathRelation.enumValueIndex != (int)GeometrySequenceStream.PathType.RelativeToStreamingAssets && relativePath.stringValue.Length > 1)
@@ -147,6 +155,10 @@ namespace BuildingVolumes.Streaming
             loopPlay.boolValue = EditorGUILayout.Toggle(loopPlay.boolValue);
             EditorGUILayout.EndHorizontal();
 
+            eventFoldout = EditorGUILayout.Foldout(eventFoldout, "Events");
+            if (eventFoldout)
+                EditorGUILayout.PropertyField(playbackEvents);
+
             GUILayout.Space(20);
             GUILayout.Label("Playback Controls", EditorStyles.boldLabel);
 
@@ -184,9 +196,13 @@ namespace BuildingVolumes.Streaming
 
             GUILayout.BeginHorizontal();
 
+            //Stops the playback and makes it dissappear
+            if (GUILayout.Button(EditorGUIUtility.IconContent("PreMatQuad")))
+                player.Stop();
+
             //Rewinds to first frame
             if (GUILayout.Button(EditorGUIUtility.IconContent("Animation.PrevKey")))
-                player.PlayFromStart();
+                player.GoToTime(0);
 
             //Goes a few frames back
             if (GUILayout.Button(EditorGUIUtility.IconContent("Profiler.FirstFrame")))

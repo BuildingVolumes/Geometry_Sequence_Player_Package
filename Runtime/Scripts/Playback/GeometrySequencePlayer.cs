@@ -1,7 +1,12 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
+using UnityEngine.Events;
+using UnityEngine.WSA;
+using System.Linq;
+using System.Text.RegularExpressions;
 
 namespace BuildingVolumes.Streaming
 {
@@ -23,15 +28,19 @@ namespace BuildingVolumes.Streaming
         [SerializeField]
         float playbackFPS = 30;
 
+        public UnityEvent<GeometrySequencePlayer, GSPlayerEvents> playbackEvents = new UnityEvent<GeometrySequencePlayer, GSPlayerEvents>();
+
         float playbackTimeMs = 0;
         bool play = false;
+        bool bufferingSequence = true;
 
+        public enum GSPlayerEvents { BufferingStarted, BufferingCompleted, PlaybackStarted, PlaybackFinished, Looped, FrameDropped }
 
         // Start is called before the first frame update
         void Start()
         {
             SetupGeometryStream();
-            LoadSequence(relativePath, pathRelation, playbackFPS, playAtStart);
+            OpenSequence(relativePath, pathRelation, playbackFPS, playAtStart);
         }
 
         public void SetupGeometryStream()
@@ -45,6 +54,19 @@ namespace BuildingVolumes.Streaming
             }
         }
 
+        public void ShowThumbnail(string pathToSequence)
+        {
+            if (stream != null)
+                stream.LoadEditorThumbnail(pathToSequence);
+        }
+
+        public void ClearThumbnail()
+        {
+            if (stream != null)
+                stream.ClearEditorThumbnail();
+        }
+
+
 
         private void Update()
         {
@@ -54,15 +76,25 @@ namespace BuildingVolumes.Streaming
 
                 if (GetCurrentTime() >= GetTotalTime())
                 {
-                    GoToTime(0);
-
                     if (!loopPlay)
-                        Pause();
+                    {
+                        Stop();
+                        playbackEvents.Invoke(this, GSPlayerEvents.PlaybackFinished);
+                    }
+
+                    else
+                    {
+                        GoToTime(0);
+                        playbackEvents.Invoke(this, GSPlayerEvents.Looped);
+                    }
                 }
 
                 stream.UpdateFrame(playbackTimeMs);
+
+                if (GetFrameDropped())
+                    playbackEvents.Invoke(this, GSPlayerEvents.FrameDropped);
             }
-            
+
         }
 
         //+++++++++++++++++++++ PLAYBACK API ++++++++++++++++++++++++
@@ -71,39 +103,50 @@ namespace BuildingVolumes.Streaming
         /// Load a .ply sequence (and optionally textures) from the path, and start playback if autoplay is enabled.
         /// Returns false when sequence could not be loaded, see Unity Console output for details in this case
         /// </summary>
-        /// <param name="path"></param>
-        /// <param name="relativeTo"></param>
-        /// <param name="playbackFPS"></param>
-        /// <param name="autoplay"></param>
+        /// <param name="path">The path to the sequence</param>
+        /// <param name="relativeTo">Which location is the path relative to?</param>
+        /// <param name="playbackFPS">Desired playback framerate (Default = 30 fps)</param>
+        /// <param name="autoplay">Start the playback as soon as possible. Might have a small delay as a frames need to load first</param>
+        /// <param name="buffer">Preload the first few frames into memory. Only applicable if autostart set to false. <</param>
         /// <returns>True when the sequence could sucessfully be loaded, false if an error has occured</returns>
-        public bool LoadSequence(string path, GeometrySequenceStream.PathType relativeTo, float playbackFPS = 30f, bool autoplay = false)
+        public bool OpenSequence(string path, GeometrySequenceStream.PathType relativeTo, float playbackFPS = 30f, bool autoplay = false, bool buffer = true)
         {
-            if(path.Length > 0)
+            if (path.Length > 0)
             {
                 this.playbackFPS = playbackFPS;
                 SetPath(path, relativeTo);
-                return ReloadSequence(autoplay);
+                return LoadCurrentSequence(autoplay, buffer);
             }
 
-            return false;           
+            return false;
         }
 
         /// <summary>
         /// Loads the sequence which is currently set in the player, optionally starts playback.
         /// </summary>
         /// <param name="autoplay">Start playback immediatly after loading</param>
+        /// <param name="buffer">If the playback does not autostart, loads the first few frames into memory</param>
         /// <returns>True when the sequence could sucessfully be reloaded, false if an error has occured</returns>
-        public bool ReloadSequence(bool autoplay = false)
+        public bool LoadCurrentSequence(bool autoplay = false, bool buffer = true)
         {
             bool sucess = stream.ChangeSequence(absolutePath, playbackFPS);
-            if (autoplay && sucess)
-                PlayFromStart();
-            
+
+            if (sucess)
+            {
+                if (buffer || autoplay)
+                {
+                    playbackEvents.Invoke(this, GSPlayerEvents.BufferingStarted);
+                    stream.bufferedReader.BufferFrames(0);
+                    StartCoroutine(WaitForBufferingCompleted(autoplay));
+                }
+            }
+
             return sucess;
         }
 
+
         /// <summary>
-        /// Set a new path in the player, but don't load the sequence. Use ReloadSequence() to actually load it, or LoadSequence() to set and load a sequence.
+        /// Set a new path in the player, but don't load the sequence. Use LoadCurrentSequence() to actually load it, or OpenSequence() to set and load a sequence.
         /// </summary>
         /// <param name="path">The relative or absolute path to the new Sequence</param>
         /// <param name="relativeTo">Specifiy to which path your sequence path is relative, or if it is an absolute path</param>
@@ -114,17 +157,17 @@ namespace BuildingVolumes.Streaming
 
             this.relativePath = path;
             pathRelation = relativeTo;
-            play = false;
+            Pause();
 
             //Set the correct absolute path depending on the files location
             if (pathRelation == GeometrySequenceStream.PathType.RelativeToDataPath)
-                absolutePath = Path.Combine(Application.dataPath, this.relativePath);
+                absolutePath = Path.Combine(UnityEngine.Application.dataPath, this.relativePath);
 
             if (pathRelation == GeometrySequenceStream.PathType.RelativeToStreamingAssets)
-                absolutePath = Path.Combine(Application.streamingAssetsPath, this.relativePath);
+                absolutePath = Path.Combine(UnityEngine.Application.streamingAssetsPath, this.relativePath);
 
             if (pathRelation == GeometrySequenceStream.PathType.RelativeToPersistentDataPath)
-                absolutePath = Path.Combine(Application.persistentDataPath, this.relativePath);
+                absolutePath = Path.Combine(UnityEngine.Application.persistentDataPath, this.relativePath);
 
             if (pathRelation == GeometrySequenceStream.PathType.AbsolutePath)
                 absolutePath = this.relativePath;
@@ -146,6 +189,16 @@ namespace BuildingVolumes.Streaming
         public void Pause()
         {
             play = false;
+        }
+
+        /// <summary>
+        /// Stops the playback
+        /// </summary>
+        public void Stop()
+        {
+            Pause();
+            GoToFrame(0);
+            stream.DisposeDisplayedGeometry();
         }
 
         /// <summary>
@@ -173,7 +226,7 @@ namespace BuildingVolumes.Streaming
         {
             if (GoToFrame(0))
             {
-                play = true;
+                Play();
                 return true;
             }
 
@@ -186,7 +239,7 @@ namespace BuildingVolumes.Streaming
         /// <param name="frame"></param>
         public bool GoToFrame(int frame)
         {
-            if(stream != null)
+            if (stream != null)
             {
                 float time = (frame * stream.targetFrameTimeMs) / 1000;
                 return GoToTime(time);
@@ -214,6 +267,24 @@ namespace BuildingVolumes.Streaming
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// Makes the sequence visible on the screen
+        /// </summary>
+        public void Show()
+        {
+            if(stream.streamedMeshRenderer != null)
+                stream.streamedMeshRenderer.enabled = true;
+        }
+
+        /// <summary>
+        /// Hides the sequence from the screen, but still lets it runnning in the background
+        /// </summary>
+        public void Hide()
+        {
+            if (stream.streamedMeshRenderer != null)
+                stream.streamedMeshRenderer.enabled = false;
         }
 
 
@@ -285,7 +356,7 @@ namespace BuildingVolumes.Streaming
         /// <returns></returns>
         public int GetTotalFrames()
         {
-            if(stream != null)
+            if (stream != null)
                 if (stream.bufferedReader != null)
                     return stream.bufferedReader.totalFrames;
             return -1;
@@ -308,7 +379,7 @@ namespace BuildingVolumes.Streaming
         /// <returns></returns>
         public float GetTargetFPS()
         {
-            if(stream != null)
+            if (stream != null)
                 return 1000 / stream.targetFrameTimeMs;
             return -1;
         }
@@ -320,7 +391,7 @@ namespace BuildingVolumes.Streaming
         /// <returns></returns>
         public float GetActualFPS()
         {
-            if(stream != null)
+            if (stream != null)
                 return stream.smoothedFPS;
             return -1;
         }
@@ -333,7 +404,7 @@ namespace BuildingVolumes.Streaming
         /// <returns></returns>
         public bool GetFrameDropped()
         {
-            if(stream != null)
+            if (stream != null)
             {
                 bool dropped = stream.frameDropped;
                 stream.frameDropped = false;
@@ -342,6 +413,71 @@ namespace BuildingVolumes.Streaming
 
             return false;
         }
+
+        /// <summary>
+        /// Checks if the playback cache has been filled and is ready to play.
+        /// If it is, playback starts immediatly once you call Play()
+        /// </summary>
+        /// <returns></returns>
+        public bool GetCacheFilled()
+        {
+            if (stream != null)
+            {
+                if (stream.bufferedReader != null)
+                {
+                    bool cacheReady = true;
+
+                    for (int i = 0; i < stream.bufferedReader.frameBuffer.Length; i++)
+                    {
+                        if (!stream.bufferedReader.IsFrameBuffered(stream.bufferedReader.frameBuffer[i]))
+                            cacheReady = false;
+                    }
+
+                    return cacheReady;
+                }
+            }
+
+            return false;
+        }
+
+
+        #region Events
+
+        private IEnumerator WaitForBufferingCompleted(bool playFromStart)
+        {
+            if (bufferingSequence)
+            {
+                while (!GetCacheFilled())
+                    yield return null;
+
+                bufferingSequence = false;
+
+                playbackEvents.Invoke(this, GSPlayerEvents.BufferingCompleted);
+
+                if (playFromStart)
+                {
+                    PlayFromStart();
+                    playbackEvents.Invoke(this, GSPlayerEvents.PlaybackStarted);
+                }
+            }
+
+        }
+
+        #endregion
+
+
+
+        #region Obsolete
+
+        [Obsolete("LoadSequence is deprecated, please use OpenSequence instead.", true)]
+        public void LoadSequence()
+        { }
+
+        [Obsolete("ReloadSequence is deprecated, please use LoadCurrentSequence instead.", true)]
+        public void ReloadSequence()
+        { }
+
+        #endregion
     }
 
 }

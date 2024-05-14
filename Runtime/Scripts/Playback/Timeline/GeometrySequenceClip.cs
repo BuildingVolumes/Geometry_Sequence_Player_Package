@@ -6,6 +6,7 @@ using UnityEngine.Playables;
 namespace BuildingVolumes.Streaming
 {    public class GeometrySequenceClip : PlayableAsset
     {
+        public GeometrySequenceStream stream;
         public string relativePath;
         public GeometrySequenceStream.PathType pathRelation;
         public float targetPlaybackFPS = 30;
@@ -15,11 +16,24 @@ namespace BuildingVolumes.Streaming
             ScriptPlayable<GeometrySequenceBehaviour> playable = ScriptPlayable<GeometrySequenceBehaviour>.Create(graph);
 
             GeometrySequenceBehaviour geoSequenceBehaviour = playable.GetBehaviour();
+            stream = owner.GetComponent<GeometrySequenceStream>(); 
             geoSequenceBehaviour.relativePath = relativePath;
             geoSequenceBehaviour.pathRelation = pathRelation;
             geoSequenceBehaviour.targetPlaybackFPS = targetPlaybackFPS;
 
             return playable;
+        }
+
+        public void ShowThumbnail(string path)
+        {
+            if(stream != null)
+                stream.LoadEditorThumbnail(path);
+        }
+
+        public void ClearThumbnail()
+        {
+            if (stream != null)
+                stream.ClearEditorThumbnail();
         }
     }
 }
