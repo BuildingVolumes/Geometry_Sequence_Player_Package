@@ -4,7 +4,10 @@ using Unity.Collections;
 using Unity.Jobs.LowLevel.Unsafe;
 using UnityEditor;
 using System.Runtime.InteropServices.ComTypes;
+
+#if UNITY_EDITOR
 using UnityEditor.SceneManagement;
+#endif
 
 namespace BuildingVolumes.Streaming
 {
@@ -13,6 +16,7 @@ namespace BuildingVolumes.Streaming
         public string pathToSequence { get; private set; }
 
         public Transform parentTransform;
+        public Bounds drawBounds = new Bounds(Vector3.zero, new Vector3(3,3,3));
 
         public int bufferSize = 30;
         public bool useAllThreads = true;
@@ -20,6 +24,8 @@ namespace BuildingVolumes.Streaming
 
         public Material pointcloudMaterial;
         public Material meshMaterial;
+        public bool useComputeShader;
+
 
         bool readerIsReady = false;
 
@@ -39,12 +45,15 @@ namespace BuildingVolumes.Streaming
         [HideInInspector]
         public Texture2D texture;
 
+
         public enum PathType { AbsolutePath, RelativeToDataPath, RelativeToPersistentDataPath, RelativeToStreamingAssets };
 
         private void Awake()
         {
             if (!useAllThreads)
                 JobsUtility.JobWorkerCount = threadCount;
+            else
+                JobsUtility.JobWorkerCount = JobsUtility.JobWorkerMaximumCount;
 
             if (GetComponent<MeshRenderer>())
                 GetComponent<MeshRenderer>().enabled = false;
@@ -93,8 +102,9 @@ namespace BuildingVolumes.Streaming
                 if (thumbnail.textureBufferRaw.Length > 0)
                     thumbnail.textureBufferRaw.Dispose();
 
+#if UNITY_EDITOR
                 EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
-
+#endif
             }
         }
 
@@ -338,7 +348,9 @@ namespace BuildingVolumes.Streaming
                 meshFilter.sharedMesh = new Mesh();
 
             Mesh.ApplyAndDisposeWritableMeshData(frame.meshArray, meshFilter.sharedMesh);
-            meshFilter.sharedMesh.RecalculateBounds();
+
+            Vector3 boundCenter = drawBounds.center + streamedMeshObject.transform.position;
+            meshFilter.sharedMesh.bounds = new Bounds(boundCenter, drawBounds.size);
 
             if (frame.plyHeaderInfo.meshType == MeshTopology.Triangles)
                 meshFilter.sharedMesh.RecalculateNormals();
@@ -434,7 +446,5 @@ namespace BuildingVolumes.Streaming
             if (pointcloudMaterial == null && meshMaterial == null)
                 SetupMaterials();
         }
-
     }
-
 }
