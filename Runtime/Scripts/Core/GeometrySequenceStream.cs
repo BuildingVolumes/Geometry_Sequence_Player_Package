@@ -3,8 +3,10 @@ using System.IO;
 using Unity.Collections;
 using Unity.Jobs.LowLevel.Unsafe;
 using UnityEditor;
-using System.Runtime.InteropServices.ComTypes;
+
+#if UNITY_EDITOR
 using UnityEditor.SceneManagement;
+#endif
 
 namespace BuildingVolumes.Streaming
 {
@@ -13,6 +15,7 @@ namespace BuildingVolumes.Streaming
         public string pathToSequence { get; private set; }
 
         public Transform parentTransform;
+        public Bounds drawBounds = new Bounds(Vector3.zero, new Vector3(3, 3, 3));
 
         public int bufferSize = 30;
         public bool useAllThreads = true;
@@ -20,6 +23,11 @@ namespace BuildingVolumes.Streaming
 
         public Material pointcloudMaterial;
         public Material meshMaterial;
+
+        public bool useComputeShader;
+        ComputeShader pointcloudCompute;
+        PointcloudRenderer pointcloudRenderer;
+
 
         bool readerIsReady = false;
 
@@ -39,12 +47,15 @@ namespace BuildingVolumes.Streaming
         [HideInInspector]
         public Texture2D texture;
 
+
         public enum PathType { AbsolutePath, RelativeToDataPath, RelativeToPersistentDataPath, RelativeToStreamingAssets };
 
         private void Awake()
         {
             if (!useAllThreads)
                 JobsUtility.JobWorkerCount = threadCount;
+            else
+                JobsUtility.JobWorkerCount = JobsUtility.JobWorkerMaximumCount;
 
             if (GetComponent<MeshRenderer>())
                 GetComponent<MeshRenderer>().enabled = false;
@@ -93,8 +104,9 @@ namespace BuildingVolumes.Streaming
                 if (thumbnail.textureBufferRaw.Length > 0)
                     thumbnail.textureBufferRaw.Dispose();
 
+#if UNITY_EDITOR
                 EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
-
+#endif
             }
         }
 
@@ -201,7 +213,7 @@ namespace BuildingVolumes.Streaming
 
             catch (System.Exception e)
             {
-                UnityEngine.Debug.LogError("Error getting sequence files, folder is probably empty: " + pathToSequence);
+                UnityEngine.Debug.LogError("Error getting sequence files, folder is probably empty: " + pathToSequence + " Error: " + e.Message);
                 return false;
             }
 
@@ -213,7 +225,8 @@ namespace BuildingVolumes.Streaming
 
             if (pointcloudMaterial == null || meshMaterial == null)
             {
-
+                UnityEngine.Debug.LogError("Couldn't load Materials");
+                return false;
             }
 
             BinaryReader headerReader = new BinaryReader(new FileStream(paths[0], FileMode.Open));
@@ -232,6 +245,14 @@ namespace BuildingVolumes.Streaming
             headerReader.Dispose();
 
             streamedMeshFilter = streamedMeshObject.AddComponent<MeshFilter>();
+
+            MeshFilter pcRenderMesh;
+            pcRenderMesh = streamedMeshFilter;
+            if (useComputeShader)
+            {                
+                streamedMeshFilter = gameObject.GetComponent<MeshFilter>();
+            }
+
             streamedMeshFilter.mesh = new Mesh();
             streamedMeshRenderer = streamedMeshObject.AddComponent<MeshRenderer>();
 
@@ -256,6 +277,17 @@ namespace BuildingVolumes.Streaming
                 }
 
                 streamedMeshRenderer.material = new Material(pointcloudMaterial);
+            }
+
+            if (useComputeShader)
+            {
+                if (pointcloudCompute == null)
+                    pointcloudCompute = Resources.Load("PointcloudCompute") as ComputeShader;
+
+                pointcloudRenderer = streamedMeshObject.AddComponent<PointcloudRenderer>();
+                pointcloudRenderer.computeShader = pointcloudCompute;
+                pointcloudRenderer.sourceMeshFilter = streamedMeshFilter;
+                pointcloudRenderer.outputMeshFilter = pcRenderMesh;
             }
 
             return true;
@@ -338,10 +370,21 @@ namespace BuildingVolumes.Streaming
                 meshFilter.sharedMesh = new Mesh();
 
             Mesh.ApplyAndDisposeWritableMeshData(frame.meshArray, meshFilter.sharedMesh);
-            meshFilter.sharedMesh.RecalculateBounds();
+
+            Vector3 offset;
+            if (streamedMeshObject == null)
+                offset = transform.position;
+            else
+                offset = streamedMeshObject.transform.position;
+
+            Vector3 boundCenter = drawBounds.center + offset;
+            meshFilter.sharedMesh.bounds = new Bounds(boundCenter, drawBounds.size);
 
             if (frame.plyHeaderInfo.meshType == MeshTopology.Triangles)
                 meshFilter.sharedMesh.RecalculateNormals();
+
+            if (useComputeShader && pointcloudRenderer != null)
+                pointcloudRenderer.Render();
         }
 
         /// <summary>
@@ -373,30 +416,12 @@ namespace BuildingVolumes.Streaming
 
         public void SetupMaterials()
         {
-#if UNITY_EDITOR
             //Fill up material slots with default materials
             if (pointcloudMaterial == null)
-            {
-                string[] Guids = AssetDatabase.FindAssets("GS_PointcloudMaterial t:material");
-                if (Guids.Length > 0)
-                {
-                    string path = AssetDatabase.GUIDToAssetPath(Guids[0]);
-                    Material mat = (Material)AssetDatabase.LoadAssetAtPath(path, typeof(Material));
-                    pointcloudMaterial = mat;
-                }
-            }
+                pointcloudMaterial = Resources.Load("GS_PointcloudMaterial") as Material;
 
             if (meshMaterial == null)
-            {
-                string[] Guids = AssetDatabase.FindAssets("GS_MeshMaterial t:material");
-                if (Guids.Length > 0)
-                {
-                    string path = AssetDatabase.GUIDToAssetPath(Guids[0]);
-                    Material mat = (Material)AssetDatabase.LoadAssetAtPath(path, typeof(Material));
-                    meshMaterial = mat;
-                }
-            }
-#endif
+                meshMaterial = Resources.Load("GS_MeshMaterial") as Material;
         }
 
 
@@ -434,7 +459,5 @@ namespace BuildingVolumes.Streaming
             if (pointcloudMaterial == null && meshMaterial == null)
                 SetupMaterials();
         }
-
     }
-
 }
