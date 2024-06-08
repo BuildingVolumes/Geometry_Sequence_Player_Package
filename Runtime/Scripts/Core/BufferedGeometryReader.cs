@@ -96,7 +96,7 @@ namespace BuildingVolumes.Streaming
 
             catch (Exception e)
             {
-                UnityEngine.Debug.LogError("Sequence path is not valid or has restricted access! Path: " + folder);
+                UnityEngine.Debug.LogError("Sequence path is not valid or has restricted access! Path: " + folder + " Error: " + e.Message);
                 return false;
             }
 
@@ -137,7 +137,7 @@ namespace BuildingVolumes.Streaming
 
                 catch (Exception e)
                 {
-                    UnityEngine.Debug.LogError("Texture could not be found !");
+                    UnityEngine.Debug.LogError("Texture could not be found!" + " Error: " + e.Message);
                     return false;
                 }
 
