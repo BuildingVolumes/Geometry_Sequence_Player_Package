@@ -3,6 +3,7 @@ using System.IO;
 using Unity.Collections;
 using Unity.Jobs.LowLevel.Unsafe;
 using UnityEditor;
+using System.Collections.Generic;
 
 #if UNITY_EDITOR
 using UnityEditor.SceneManagement;
@@ -24,7 +25,6 @@ namespace BuildingVolumes.Streaming
         public Material pointcloudMaterial;
         public Material meshMaterial;
 
-        public bool useComputeShader;
         ComputeShader pointcloudCompute;
         PointcloudRenderer pointcloudRenderer;
 
@@ -67,47 +67,47 @@ namespace BuildingVolumes.Streaming
         /// <param name="pathToSequence"></param>
         public void LoadEditorThumbnail(string pathToSequence)
         {
-            Frame thumbnail = new Frame();
+            //            Frame thumbnail = new Frame();
 
-            if (Directory.Exists(pathToSequence))
-            {
-                BufferedGeometryReader reader = new BufferedGeometryReader(pathToSequence, 1);
+            //            if (Directory.Exists(pathToSequence))
+            //            {
+            //                BufferedGeometryReader reader = new BufferedGeometryReader(pathToSequence, 1);
 
-                if (reader.plyFilePaths.Length > 0 && reader.texturesFilePath == null)
-                    thumbnail = reader.LoadSingleFrame(reader.plyFilePaths[0], null);
+            //                if (reader.plyFilePaths.Length > 0 && reader.texturesFilePath == null)
+            //                    thumbnail = reader.LoadSingleFrame(reader.plyFilePaths[0], null);
 
-                else if (reader.plyFilePaths.Length > 0 && reader.texturesFilePath.Length > 0)
-                    thumbnail = reader.LoadSingleFrame(reader.plyFilePaths[0], reader.texturesFilePath[0]);
+            //                else if (reader.plyFilePaths.Length > 0 && reader.texturesFilePath.Length > 0)
+            //                    thumbnail = reader.LoadSingleFrame(reader.plyFilePaths[0], reader.texturesFilePath[0]);
 
-                MeshRenderer meshRenderer = GetComponent<MeshRenderer>();
-                MeshFilter meshFilter = GetComponent<MeshFilter>();
+            //                MeshRenderer meshRenderer = GetComponent<MeshRenderer>();
+            //                MeshFilter meshFilter = GetComponent<MeshFilter>();
 
-                if (!meshFilter)
-                    meshFilter = gameObject.AddComponent<MeshFilter>();
-                if (!meshRenderer)
-                    meshRenderer = gameObject.AddComponent<MeshRenderer>();
+            //                if (!meshFilter)
+            //                    meshFilter = gameObject.AddComponent<MeshFilter>();
+            //                if (!meshRenderer)
+            //                    meshRenderer = gameObject.AddComponent<MeshRenderer>();
 
-                thumbnail.textureMode = TextureMode.None;
+            //                thumbnail.textureMode = TextureMode.None;
 
-                if (thumbnail.plyHeaderInfo.meshType == MeshTopology.Points)
-                    meshRenderer.material = pointcloudMaterial;
+            //                if (thumbnail.plyHeaderInfo.meshType == MeshTopology.Points)
+            //                    meshRenderer.material = pointcloudMaterial;
 
-                else
-                {
-                    meshRenderer.material = meshMaterial;
-                    if (thumbnail.textureBufferRaw.Length > 0)
-                        thumbnail.textureMode = TextureMode.PerFrame;
-                }
+            //                else
+            //                {
+            //                    meshRenderer.material = meshMaterial;
+            //                    if (thumbnail.textureBufferRaw.Length > 0)
+            //                        thumbnail.textureMode = TextureMode.PerFrame;
+            //                }
 
-                ShowFrameData(thumbnail, meshRenderer, meshFilter);
+            //                ShowFrameData(thumbnail, meshRenderer, meshFilter);
 
-                if (thumbnail.textureBufferRaw.Length > 0)
-                    thumbnail.textureBufferRaw.Dispose();
+            //                if (thumbnail.textureBufferRaw.Length > 0)
+            //                    thumbnail.textureBufferRaw.Dispose();
 
-#if UNITY_EDITOR
-                EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
-#endif
-            }
+            //#if UNITY_EDITOR
+            //                EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
+            //#endif
+            //            }
         }
 
         /// <summary>
@@ -174,8 +174,8 @@ namespace BuildingVolumes.Streaming
                 if (frameBufferIndex > -1)
                 {
                     //The frame has been loaded and we'll show the model (& texture)
-                    ShowFrameData(bufferedReader.frameBuffer[frameBufferIndex], streamedMeshRenderer, streamedMeshFilter);
-                    bufferedReader.frameBuffer[frameBufferIndex].isDisposed = true;
+                    ShowFrameData(bufferedReader.frameBuffer[frameBufferIndex], streamedMeshFilter);
+                    bufferedReader.frameBuffer[frameBufferIndex].wasConsumed = true;
 
                     float decay = 0.95f;
                     if (elapsedMsSinceLastFrame > 0)
@@ -229,34 +229,31 @@ namespace BuildingVolumes.Streaming
                 return false;
             }
 
-            BinaryReader headerReader = new BinaryReader(new FileStream(paths[0], FileMode.Open));
-
-            string line = "";
-            bool mesh = false;
-
-            while (!line.Contains("end_header"))
-            {
-                line = bufferedReader.ReadPLYHeaderLine(headerReader);
-
-                if (line.Contains("face"))
-                    mesh = true;
-            }
-
-            headerReader.Dispose();
-
             streamedMeshFilter = streamedMeshObject.AddComponent<MeshFilter>();
 
-            MeshFilter pcRenderMesh;
-            pcRenderMesh = streamedMeshFilter;
-            if (useComputeShader)
-            {                
-                streamedMeshFilter = gameObject.GetComponent<MeshFilter>();
-            }
-
-            streamedMeshFilter.mesh = new Mesh();
+            streamedMeshFilter.sharedMesh = new Mesh();
             streamedMeshRenderer = streamedMeshObject.AddComponent<MeshRenderer>();
 
-            if (mesh)
+            if (bufferedReader.sequenceConfig.geometryType == SequenceConfiguration.GeometryType.point)
+            {
+                if (pointcloudMaterial == null)
+                {
+                    UnityEngine.Debug.LogError("Pointcloud material not assigned in GeometrySequenceStream Component, please assign a material!");
+                    return false;
+                }
+
+                streamedMeshRenderer.material = new Material(pointcloudMaterial);
+                pointcloudRenderer = streamedMeshObject.AddComponent<PointcloudRenderer>();
+
+                if (pointcloudCompute == null)
+                    pointcloudCompute = Resources.Load("PointcloudCompute") as ComputeShader;
+
+                pointcloudRenderer.computeShader = pointcloudCompute;
+
+                pointcloudRenderer.SetupPointcloudRenderer(bufferedReader.sequenceConfig.maxVertexCount, streamedMeshFilter);
+            }
+
+            else
             {
                 if (meshMaterial == null)
                 {
@@ -268,72 +265,50 @@ namespace BuildingVolumes.Streaming
                 streamedMeshRenderer.material.SetTexture("_MainTex", texture);
             }
 
-            else
-            {
-                if (meshMaterial == null)
-                {
-                    UnityEngine.Debug.LogError("Pointcloud material not assigned in GeometrySequenceStream Component, please assign a material!");
-                    return false;
-                }
-
-                streamedMeshRenderer.material = new Material(pointcloudMaterial);
-            }
-
-            if (useComputeShader)
-            {
-                if (pointcloudCompute == null)
-                    pointcloudCompute = Resources.Load("PointcloudCompute") as ComputeShader;
-
-                pointcloudRenderer = streamedMeshObject.AddComponent<PointcloudRenderer>();
-                pointcloudRenderer.computeShader = pointcloudCompute;
-                pointcloudRenderer.sourceMeshFilter = streamedMeshFilter;
-                pointcloudRenderer.outputMeshFilter = pcRenderMesh;
-            }
-
             return true;
         }
 
         bool SetupTexture()
         {
-            string[] textureFiles = Directory.GetFiles(pathToSequence + "/", "*.dds");
+            //string[] textureFiles = Directory.GetFiles(pathToSequence + "/", "*.dds");
 
-            HeaderDDS headerDDS = new HeaderDDS();
+            //HeaderDDS headerDDS = new HeaderDDS();
 
-            TextureMode textureMode = TextureMode.None;
+            //TextureMode textureMode = TextureMode.None;
 
-            if (textureFiles.Length > 0)
-            {
-                headerDDS = bufferedReader.ReadDDSHeader(textureFiles[0]);
+            //if (textureFiles.Length > 0)
+            //{
+            //    headerDDS = bufferedReader.ReadDDSHeader(textureFiles[0]);
 
-                if (headerDDS.error)
-                    return false;
+            //    if (headerDDS.error)
+            //        return false;
 
-                texture = new Texture2D(headerDDS.width, headerDDS.height, TextureFormat.DXT1, false);
+            //    texture = new Texture2D(headerDDS.width, headerDDS.height, TextureFormat.DXT1, false);
 
-                //Case: A single texture for the whole geometry sequence
-                if (textureFiles.Length == 1)
-                {
-                    textureMode = TextureMode.Single;
+            //    //Case: A single texture for the whole geometry sequence
+            //    if (textureFiles.Length == 1)
+            //    {
+            //        textureMode = TextureMode.Single;
 
-                    //In this case we simply pre-load the texture at the start
-                    Frame textureLoad = new Frame();
-                    textureLoad.textureBufferRaw = new NativeArray<byte>(headerDDS.size, Allocator.Persistent);
-                    textureLoad = bufferedReader.ScheduleTextureJob(textureLoad, textureFiles[0]);
-                    ShowTextureData(textureLoad, streamedMeshRenderer);
-                    textureLoad.textureBufferRaw.Dispose();
-                }
+            //        //In this case we simply pre-load the texture at the start
+            //        Frame textureLoad = new Frame();
+            //        textureLoad.textureBufferRaw = new NativeArray<byte>(headerDDS.size, Allocator.Persistent);
+            //        textureLoad = bufferedReader.ScheduleTextureJob(textureLoad, textureFiles[0]);
+            //        ShowTextureData(textureLoad, streamedMeshRenderer);
+            //        textureLoad.textureBufferRaw.Dispose();
+            //    }
 
-                //Case: Each frame has its own texture
-                if (textureFiles.Length > 1)
-                    textureMode = TextureMode.PerFrame;
+            //    //Case: Each frame has its own texture
+            //    if (textureFiles.Length > 1)
+            //        textureMode = TextureMode.PerFrame;
 
-            }
+            //}
 
-            else
-                textureMode = TextureMode.None;
+            //else
+            //    textureMode = TextureMode.None;
 
-            if (!bufferedReader.SetupTextureReader(textureMode, headerDDS))
-                return false;
+            //if (!bufferedReader.SetupTextureReader(textureMode, headerDDS))
+            //    return false;
 
             return true;
         }
@@ -344,14 +319,14 @@ namespace BuildingVolumes.Streaming
         /// Display mesh and texture data from a frame buffer
         /// </summary>
         /// <param name="frame"></param>
-        public void ShowFrameData(Frame frame, MeshRenderer meshrenderer, MeshFilter meshFilter)
+        public void ShowFrameData(Frame frame, MeshFilter meshFilter)
         {
             ShowGeometryData(frame, meshFilter);
 
-            if (frame.ddsHeaderInfo.size > 0)
-            {
-                ShowTextureData(frame, meshrenderer);
-            }
+            //if (frame.ddsHeaderInfo.size > 0)
+            //{
+            //    ShowTextureData(frame, meshrenderer);
+            //}
         }
 
 
@@ -361,15 +336,12 @@ namespace BuildingVolumes.Streaming
         /// <param name="frame"></param>
         void ShowGeometryData(Frame frame, MeshFilter meshFilter)
         {
-            if (frame.plyHeaderInfo.error)
-                return;
-
             frame.geoJobHandle.Complete();
 
             if (meshFilter.sharedMesh == null)
+            {
                 meshFilter.sharedMesh = new Mesh();
-
-            Mesh.ApplyAndDisposeWritableMeshData(frame.meshArray, meshFilter.sharedMesh);
+            }
 
             Vector3 offset;
             if (streamedMeshObject == null)
@@ -377,14 +349,34 @@ namespace BuildingVolumes.Streaming
             else
                 offset = streamedMeshObject.transform.position;
 
-            Vector3 boundCenter = drawBounds.center + offset;
-            meshFilter.sharedMesh.bounds = new Bounds(boundCenter, drawBounds.size);
+            List<float> bounds = bufferedReader.sequenceConfig.maxBounds;
 
-            if (frame.plyHeaderInfo.meshType == MeshTopology.Triangles)
+            Vector3 center = Vector3.zero;
+            center.x = bounds[0] + bounds[3];
+            center.y = bounds[1] + bounds[4];
+            center.z = bounds[2] + bounds[5];
+
+            Vector3 size = Vector3.zero;
+            size.x = Mathf.Abs(bounds[0]) + Mathf.Abs(bounds[3]);
+            size.y = Mathf.Abs(bounds[1]) + Mathf.Abs(bounds[4]);
+            size.z = Mathf.Abs(bounds[2]) + Mathf.Abs(bounds[5]);
+
+            meshFilter.sharedMesh.bounds = new Bounds(center, size);
+
+            if (bufferedReader.sequenceConfig.geometryType == SequenceConfiguration.GeometryType.point)
+            {
+                pointcloudRenderer.Render(frame.vertexBufferRaw, frame.vertexCount, meshFilter.transform);
+            }
+
+            else
+            {
+                Mesh.ApplyAndDisposeWritableMeshData(frame.meshArray, meshFilter.sharedMesh);
                 meshFilter.sharedMesh.RecalculateNormals();
+            }
 
-            if (useComputeShader && pointcloudRenderer != null)
-                pointcloudRenderer.Render();
+
+
+
         }
 
         /// <summary>
@@ -393,19 +385,15 @@ namespace BuildingVolumes.Streaming
         /// <param name="frame"></param>
         void ShowTextureData(Frame frame, MeshRenderer meshRenderer)
         {
-            if (frame.ddsHeaderInfo.error)
-                return;
-
             frame.textureJobHandle.Complete();
 
             NativeArray<byte> textureRaw = texture.GetRawTextureData<byte>();
-            HeaderDDS textureHeader = frame.ddsHeaderInfo;
 
-            if (textureRaw.Length != frame.textureBufferRaw.Length)
-            {
-                texture = new Texture2D(textureHeader.width, textureHeader.height, TextureFormat.DXT1, false);
-                textureRaw = texture.GetRawTextureData<byte>();
-            }
+            //if (textureRaw.Length != frame.textureBufferRaw.Length)
+            //{
+            //    texture = new Texture2D(textureHeader.width, textureHeader.height, TextureFormat.DXT1, false);
+            //    textureRaw = texture.GetRawTextureData<byte>();
+            //}
 
             textureRaw.CopyFrom(frame.textureBufferRaw);
             texture.Apply();
@@ -429,7 +417,7 @@ namespace BuildingVolumes.Streaming
         {
             if (bufferedReader != null)
             {
-                bufferedReader.DisposeAllFrames(true, true, true);
+                bufferedReader.DisposeFrameBuffer(true);
             }
 
         }

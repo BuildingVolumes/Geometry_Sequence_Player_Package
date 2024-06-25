@@ -63,8 +63,6 @@ namespace BuildingVolumes.Streaming
                 stream.ClearEditorThumbnail();
         }
 
-
-
         private void Update()
         {
             if (play)

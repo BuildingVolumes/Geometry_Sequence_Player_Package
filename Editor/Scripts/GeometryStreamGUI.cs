@@ -15,8 +15,6 @@ namespace BuildingVolumes.Streaming
 
         SerializedProperty pointcloudMaterial;
         SerializedProperty meshMaterial;
-        SerializedProperty pointcloudCompute;
-        SerializedProperty useComputeShader;
 
         SerializedProperty bufferSize;
         SerializedProperty useAllThreads;
@@ -41,8 +39,6 @@ namespace BuildingVolumes.Streaming
             
             pointcloudMaterial = serializedObject.FindProperty("pointcloudMaterial");
             meshMaterial = serializedObject.FindProperty("meshMaterial");
-            pointcloudCompute = serializedObject.FindProperty("pointcloudCompute");
-            useComputeShader = serializedObject.FindProperty("useComputeShader");
             
             bufferSize = serializedObject.FindProperty("bufferSize");
             useAllThreads = serializedObject.FindProperty("useAllThreads");
@@ -68,7 +64,6 @@ namespace BuildingVolumes.Streaming
 
             EditorGUILayout.PropertyField(pointcloudMaterial);
             EditorGUILayout.PropertyField(meshMaterial);
-            EditorGUILayout.PropertyField(useComputeShader);
 
             showMoreSettings = EditorGUILayout.Foldout(showMoreSettings, "More Settings");
             if(showMoreSettings)

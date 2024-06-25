@@ -80,26 +80,33 @@ namespace BuildingVolumes.Streaming
                     {
                         if (Directory.GetFiles(path, "*.ply").Length > 0)
                         {
-                            if (path.Contains("StreamingAssets"))
+                            if(File.Exists(path + "/sequence.json"))
                             {
-                                relativePath.stringValue = Path.GetRelativePath(Application.streamingAssetsPath, path);
-                                pathRelation.enumValueFlag = (int)GeometrySequenceStream.PathType.RelativeToStreamingAssets;
-                            }
+                                if (path.Contains("StreamingAssets"))
+                                {
+                                    relativePath.stringValue = Path.GetRelativePath(Application.streamingAssetsPath, path);
+                                    pathRelation.enumValueFlag = (int)GeometrySequenceStream.PathType.RelativeToStreamingAssets;
+                                }
 
-                            else if (path.Contains(Application.dataPath))
-                            {
-                                relativePath.stringValue = Path.GetRelativePath(Application.dataPath, path);
-                                pathRelation.enumValueFlag = (int)GeometrySequenceStream.PathType.RelativeToDataPath;
+                                else if (path.Contains(Application.dataPath))
+                                {
+                                    relativePath.stringValue = Path.GetRelativePath(Application.dataPath, path);
+                                    pathRelation.enumValueFlag = (int)GeometrySequenceStream.PathType.RelativeToDataPath;
+                                }
+
+                                else
+                                {
+                                    relativePath.stringValue = path;
+                                    pathRelation.enumValueFlag = (int)GeometrySequenceStream.PathType.AbsolutePath;
+                                }
+
+                                player.ShowThumbnail(path);
                             }
 
                             else
                             {
-                                relativePath.stringValue = path;
-                                pathRelation.enumValueFlag = (int)GeometrySequenceStream.PathType.AbsolutePath;
+                                EditorUtility.DisplayDialog("Metafile not found", "Could not find Sequence Metafile, which is required in this version of the plugin. Please re-convert/generate your files with the converter tool!", "Okay");
                             }
-
-                            player.ShowThumbnail(path);
-
                         }
 
                         else

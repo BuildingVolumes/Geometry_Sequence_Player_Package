@@ -9,6 +9,7 @@ using Unity.Jobs;
 using System.Text;
 using System.Linq;
 using System.Text.RegularExpressions;
+using static BuildingVolumes.Streaming.SequenceConfiguration;
 
 
 namespace BuildingVolumes.Streaming
@@ -16,37 +17,23 @@ namespace BuildingVolumes.Streaming
 
     public struct Frame
     {
-        public HeaderPLY plyHeaderInfo;
-        public Mesh.MeshDataArray meshArray;
+        public Mesh.MeshDataArray meshArray; //When the data is a mesh
+        public NativeArray<byte> vertexBufferRaw; //When the data is a pointcloud
+        public NativeArray<byte> textureBufferRaw;
+
+        public SequenceConfiguration.TextureMode textureMode;
+
+        public int headerSize;
+        public int vertexCount;
+        public int indiceCount;
+
         public ReadGeometryJob geoJob;
         public JobHandle geoJobHandle;
-
-        public HeaderDDS ddsHeaderInfo;
-        public NativeArray<byte> textureBufferRaw;
         public ReadTextureJob textureJob;
         public JobHandle textureJobHandle;
-        public TextureMode textureMode;
 
         public int playbackIndex;
-        public bool isDisposed;
-    }
-
-    public struct HeaderPLY
-    {
-        public MeshTopology meshType;
-        public bool hasUVs;
-        public int vertexCount;
-        public int indexCount;
-        public int byteCount;
-        public bool error;
-    }
-
-    public struct HeaderDDS
-    {
-        public int width;
-        public int height;
-        public int size;
-        public bool error;
+        public bool wasConsumed;
     }
 
     public enum TextureMode { None, Single, PerFrame };
@@ -54,6 +41,7 @@ namespace BuildingVolumes.Streaming
     public class BufferedGeometryReader
     {
         public string folder;
+        public SequenceConfiguration sequenceConfig;
         public string[] plyFilePaths;
         public string[] texturesFilePath;
         public int bufferSize = 4;
@@ -75,17 +63,21 @@ namespace BuildingVolumes.Streaming
         ~BufferedGeometryReader()
         {
             //When the reader is destroyed, we need to ensure that all the NativeArrays will also be manually deleted/disposed
-            DisposeAllFrames(true, true, true);
+            DisposeFrameBuffer(true);
         }
 
         /// <summary>
-        /// Use this function to setup a new buffered Reader. Don't forget to also setup the texture Reader, even if you don't use textures!
+        /// Use this function to setup a new buffered Reader.
         /// </summary>
         /// <param name="folder">A path to a folder containing .ply geometry files and optionally .dds texture files</param>
         /// <returns>Returns true on success, false when any errors have occured during setup</returns>
         public bool SetupReader(string folder, int frameBufferSize)
         {
             this.folder = folder;
+
+            sequenceConfig = LoadConfigFromFile(folder);
+            if (sequenceConfig == null)
+                return false;
 
             try
             {
@@ -96,13 +88,13 @@ namespace BuildingVolumes.Streaming
 
             catch (Exception e)
             {
-                UnityEngine.Debug.LogError("Sequence path is not valid or has restricted access! Path: " + folder + " Error: " + e.Message);
+                Debug.LogError("Sequence path is not valid or has restricted access! Path: " + folder + " Error: " + e.Message);
                 return false;
             }
 
             if (plyFilePaths.Length == 0)
             {
-                UnityEngine.Debug.LogError("No .ply files in the sequence directory: " + folder);
+                Debug.LogError("No .ply files in the sequence directory: " + folder);
                 return false;
             }
 
@@ -112,22 +104,47 @@ namespace BuildingVolumes.Streaming
 
             for (int i = 0; i < frameBuffer.Length; i++)
             {
-                frameBuffer[i].isDisposed = true;
+                frameBuffer[i].wasConsumed = true;
                 frameBuffer[i].playbackIndex = -1;
+
+                VertexAttributeDescriptor[] layout = new VertexAttributeDescriptor[0];
+
+                switch (sequenceConfig.geometryType)
+                {
+                    case GeometryType.point:
+                        layout = new[] {
+                    new VertexAttributeDescriptor(VertexAttribute.Position, VertexAttributeFormat.Float32, 3),
+                    new VertexAttributeDescriptor(VertexAttribute.Color, VertexAttributeFormat.UNorm8, 4) };
+                        break;
+
+                    case GeometryType.mesh:
+                        layout = new[] { new VertexAttributeDescriptor(VertexAttribute.Position, VertexAttributeFormat.Float32, 3) };
+                        break;
+
+                    case GeometryType.texturedMesh:
+                        layout = new[] { new VertexAttributeDescriptor(VertexAttribute.Position, VertexAttributeFormat.Float32, 3),
+                    new VertexAttributeDescriptor(VertexAttribute.TexCoord0, VertexAttributeFormat.Float32, 2) };
+                        break;
+
+                    default:
+                        break;
+                }
+
+                //Allocate every frame with the highest amount of vertices being used in this sequence. 
+                //This way, we can re-use the meshArrays, instead of re-allocating them each frame
+
+                if (sequenceConfig.geometryType == GeometryType.point)
+                    frameBuffer[i].vertexBufferRaw = new NativeArray<byte>(sequenceConfig.maxVertexCount * 4 * 4, Allocator.Persistent);
+
+                else
+                {
+                    frameBuffer[i].meshArray = Mesh.AllocateWritableMeshData(1);
+                    frameBuffer[i].meshArray[0].SetVertexBufferParams(sequenceConfig.maxVertexCount, layout);
+                    frameBuffer[i].meshArray[0].SetIndexBufferParams(sequenceConfig.maxIndiceCount, IndexFormat.UInt32);
+                }
             }
 
-            return true;
-        }
-
-        /// <summary>
-        /// Setup the texture reader. You need to set up a texture reader even when you don't use textures!
-        /// </summary>
-        /// <param name="textureMode">Select between no textures, a single texture for the whole sequence or one texture per frame</param>
-        /// <param name="headerDDS">Include the header data from the first texture in the folder, you can read it with ReadDDSHeader() </param>
-        /// <returns>Returns true on success, false when any error has occured</returns>
-        public bool SetupTextureReader(TextureMode textureMode, HeaderDDS headerDDS)
-        {
-            if (textureMode != TextureMode.None)
+            if (sequenceConfig.textureMode != SequenceConfiguration.TextureMode.None)
             {
                 try
                 {
@@ -150,12 +167,12 @@ namespace BuildingVolumes.Streaming
 
             for (int i = 0; i < frameBuffer.Length; i++)
             {
-                frameBuffer[i].textureMode = textureMode;
+                frameBuffer[i].textureMode = sequenceConfig.textureMode;
 
-                if (textureMode == TextureMode.PerFrame)
-                    frameBuffer[i].textureBufferRaw = new NativeArray<byte>(headerDDS.size, Allocator.Persistent);
+                if (sequenceConfig.textureMode == SequenceConfiguration.TextureMode.PerFrame)
+                    frameBuffer[i].textureBufferRaw = new NativeArray<byte>(sequenceConfig.textureSize, Allocator.Persistent);
                 else
-                    frameBuffer[i].textureBufferRaw = new NativeArray<byte>(1, Allocator.Persistent); //We allocate one byte to indicate that this texture buffer is not null
+                    frameBuffer[i].textureBufferRaw = new NativeArray<byte>(1, Allocator.Persistent); //We allocate one byte to indicate that this texture buffer is not used
 
             }
 
@@ -174,63 +191,54 @@ namespace BuildingVolumes.Streaming
             if (currentPlaybackFrame < 0 || currentPlaybackFrame > totalFrames)
                 return;
 
-            //Debug.Log("Buffer frame routine, current Frame: " + currentPlaybackFrame);
-
             //Delete frames from buffer that are outside our current buffer range
             //which keeps our buffer clean in case of skips or lags
-            DeleteFramesOutsideOfBufferRange(currentPlaybackFrame);
+            //DeleteFramesOutsideOfBufferRange(currentPlaybackFrame);
 
             //Find out which frames we need to buffer. The buffer is a ring
             //buffer, so that when the playback loops, the whole clip doesn't need
             //to reload, but the frames should be ready.
-            int minPlaybackIndex = currentPlaybackFrame;
-            int maxPlaybackIndex = currentPlaybackFrame + (bufferSize - 1);
-            if (maxPlaybackIndex >= totalFrames)
-                maxPlaybackIndex -= (totalFrames - 1);
             List<int> framesToBuffer = new List<int>();
 
-            int playbackIndex = minPlaybackIndex;
             for (int i = 0; i < bufferSize; i++)
             {
-                if (playbackIndex >= totalFrames)
-                    playbackIndex = 0;
 
-                if (GetBufferIndexForPlaybackIndex(playbackIndex) == -1)
+                if (framesToBuffer.Count >= totalFrames)
+                    continue;
+
+                if (currentPlaybackFrame >= totalFrames)
+                    currentPlaybackFrame = 0;
+
+                if (GetBufferIndexForPlaybackIndex(currentPlaybackFrame) == -1)
                 {
-                    framesToBuffer.Add(playbackIndex);
+                    framesToBuffer.Add(currentPlaybackFrame);
                 }
 
-                playbackIndex++;
+                currentPlaybackFrame++;
             }
 
             for (int i = 0; i < frameBuffer.Length; i++)
             {
                 //Check if the buffer is ready to load the next frame 
-                if (frameBuffer[i].isDisposed && framesToBuffer.Count > 0)
+                if (frameBuffer[i].wasConsumed && framesToBuffer.Count > 0)
                 {
                     int newPlaybackIndex = framesToBuffer[0];
 
                     if (newPlaybackIndex < totalFrames)
                     {
                         Frame newFrame = frameBuffer[i];
-
-                        newFrame.meshArray = Mesh.AllocateWritableMeshData(1);
-
                         newFrame.playbackIndex = newPlaybackIndex;
+
+                        newFrame.headerSize = sequenceConfig.headerSizes[newPlaybackIndex];
+                        newFrame.vertexCount = sequenceConfig.verticeCounts[newPlaybackIndex];
+                        newFrame.indiceCount = sequenceConfig.indiceCounts[newPlaybackIndex];
+
                         newFrame = ScheduleGeometryReadJob(newFrame, plyFilePaths[newPlaybackIndex]);
 
-                        if (newFrame.textureMode == TextureMode.PerFrame && !newFrame.plyHeaderInfo.error)
-                            newFrame = ScheduleTextureJob(newFrame, texturesFilePath[newPlaybackIndex]);
+                        //if (newFrame.textureMode == TextureMode.PerFrame && !newFrame.plyHeaderInfo.error)
+                        //    newFrame = ScheduleTextureJob(newFrame, texturesFilePath[newPlaybackIndex]);
 
-                        if (newFrame.plyHeaderInfo.error || newFrame.ddsHeaderInfo.error)
-                        {
-                            newFrame.meshArray.Dispose();
-                            //If the mesh isn't in the right format, we simply skip it
-                            framesToBuffer.Remove(newPlaybackIndex);
-                            continue;
-                        }
-
-                        newFrame.isDisposed = false;
+                        newFrame.wasConsumed = false;
                         frameBuffer[i] = newFrame;
                         framesToBuffer.Remove(newPlaybackIndex);
                     }
@@ -247,9 +255,9 @@ namespace BuildingVolumes.Streaming
             newFrame = ScheduleGeometryReadJob(newFrame, geoPath);
             newFrame.geoJobHandle.Complete();
 
-            if(texturePath != null && texturePath.Length > 0)
+            if (texturePath != null && texturePath.Length > 0)
             {
-                newFrame = ScheduleTextureJob(newFrame, texturePath);
+                //newFrame = ScheduleTextureJob(newFrame, texturePath);
                 newFrame.textureJobHandle.Complete();
             }
 
@@ -269,37 +277,37 @@ namespace BuildingVolumes.Streaming
             //the playback doesn't stutter. This means if the current Frame index is near
             //the end of the buffer, our buffer range extends to the beginning again
 
-            int minFrame = currentFrameIndex;
-            int maxframe = currentFrameIndex + bufferSize;
-            if (maxframe >= totalFrames)
-                maxframe -= (totalFrames - 1);
+            //int minFrame = currentFrameIndex;
+            //int maxframe = currentFrameIndex + bufferSize;
+            //if (maxframe >= totalFrames)
+            //    maxframe -= (totalFrames - 1);
 
-            for (int i = 0; i < frameBuffer.Length; i++)
-            {
-                bool dispose = true;
-                int playbackIndex = frameBuffer[i].playbackIndex;
+            //for (int i = 0; i < frameBuffer.Length; i++)
+            //{
+            //    bool dispose = true;
+            //    int playbackIndex = frameBuffer[i].playbackIndex;
 
-                if(minFrame < maxframe)
-                {
-                    if (playbackIndex >= minFrame && playbackIndex < maxframe)
-                        dispose = false;
-                }
+            //    if (minFrame < maxframe)
+            //    {
+            //        if (playbackIndex >= minFrame && playbackIndex < maxframe)
+            //            dispose = false;
+            //    }
 
-                else
-                {
-                    if (playbackIndex >= maxframe || playbackIndex < maxframe)
-                        dispose = false;
-                }            
+            //    else
+            //    {
+            //        if (playbackIndex >= maxframe || playbackIndex < maxframe)
+            //            dispose = false;
+            //    }
 
-                if (dispose)
-                {
-                    if (!frameBuffer[i].isDisposed)
-                    {
-                        bool disposed = DisposeFrame(i, false, false);
-                    }
-                }
-                    
-            }
+            //    if (dispose)
+            //    {
+            //        if (!frameBuffer[i].isDisposed)
+            //        {
+            //            bool disposed = DisposeFrame(i, false, false);
+            //        }
+            //    }
+
+            //}
         }
 
         /// <summary>
@@ -362,9 +370,9 @@ namespace BuildingVolumes.Streaming
         /// <returns></returns>
         public bool IsFrameBuffered(Frame frame)
         {
-            if (frame.geoJobHandle.IsCompleted && !frame.isDisposed)
+            if (frame.geoJobHandle.IsCompleted)
             {
-                if (frame.textureMode == TextureMode.PerFrame)
+                if (sequenceConfig.textureMode == SequenceConfiguration.TextureMode.PerFrame)
                 {
                     if (frame.textureJobHandle.IsCompleted)
                         return true;
@@ -388,40 +396,20 @@ namespace BuildingVolumes.Streaming
         public Frame ScheduleGeometryReadJob(Frame frame, string plyPath)
         {
             frame.geoJob = new ReadGeometryJob();
+            frame.geoJob.pathCharArray = new NativeArray<byte>(Encoding.UTF8.GetBytes(plyPath), Allocator.Persistent);
+            frame.geoJob.headerSize = frame.headerSize;
+            frame.geoJob.vertexCount = frame.vertexCount;
+            frame.geoJob.indiceCount = frame.indiceCount;
 
-            frame.plyHeaderInfo = ReadPLYHeader(plyPath);
-
-            if (frame.plyHeaderInfo.error)
-                return frame;
-
-            VertexAttributeDescriptor[] layout = new VertexAttributeDescriptor[0];
-
-            if (frame.plyHeaderInfo.meshType == MeshTopology.Points)
+            if(sequenceConfig.geometryType == GeometryType.point)
             {
-                layout = new[] {
-            new VertexAttributeDescriptor(VertexAttribute.Position, VertexAttributeFormat.Float32, 3),
-            new VertexAttributeDescriptor(VertexAttribute.Color, VertexAttributeFormat.UNorm8, 4) };
+                frame.geoJob.vertexBuffer = frame.vertexBufferRaw;    
             }
 
-            else if (frame.plyHeaderInfo.meshType == MeshTopology.Triangles)
+            else
             {
-                if (frame.plyHeaderInfo.hasUVs)
-                {
-                    layout = new[] { new VertexAttributeDescriptor(VertexAttribute.Position, VertexAttributeFormat.Float32, 3),
-            new VertexAttributeDescriptor(VertexAttribute.TexCoord0, VertexAttributeFormat.Float32, 2) };
-                }
-
-                else
-                {
-                    layout = new[] { new VertexAttributeDescriptor(VertexAttribute.Position, VertexAttributeFormat.Float32, 3)};
-                }
+                frame.geoJob.mesh = frame.meshArray[0];
             }
-
-            frame.meshArray[0].SetVertexBufferParams(frame.plyHeaderInfo.vertexCount, layout);
-            frame.meshArray[0].SetIndexBufferParams(frame.plyHeaderInfo.indexCount, IndexFormat.UInt32);
-            frame.geoJob.pathCharArray = new NativeArray<byte>(Encoding.UTF8.GetBytes(plyPath), Allocator.TempJob);
-            frame.geoJob.headerInfo = frame.plyHeaderInfo;
-            frame.geoJob.mesh = frame.meshArray[0];
 
             frame.geoJobHandle = frame.geoJob.Schedule(frame.geoJobHandle);
 
@@ -435,251 +423,74 @@ namespace BuildingVolumes.Streaming
         /// <param name="frame">The frame data into which the texture will be loaded. The textureBufferRaw needs to be intialized already </param>
         /// <param name="texturePath"></param>
         /// <returns></returns>
-        public Frame ScheduleTextureJob(Frame frame, string texturePath)
-        {
-            frame.textureJob = new ReadTextureJob();
-            frame.ddsHeaderInfo = ReadDDSHeader(texturePath);
+        //public Frame ScheduleTextureJob(Frame frame, string texturePath)
+        //{
+        //    frame.textureJob = new ReadTextureJob();
 
-            if (!frame.ddsHeaderInfo.error && frame.ddsHeaderInfo.size > 0)
-            {
-                if (frame.textureBufferRaw.Length != frame.ddsHeaderInfo.size)
-                {
-                    frame.textureJobHandle.Complete();
-                    frame.textureBufferRaw.Dispose();
-                    frame.textureBufferRaw = new NativeArray<byte>(frame.ddsHeaderInfo.size, Allocator.Persistent);
-                }
+        //    if (!frame.ddsHeaderInfo.error && frame.ddsHeaderInfo.size > 0)
+        //    {
+        //        if (frame.textureBufferRaw.Length != frame.ddsHeaderInfo.size)
+        //        {
+        //            frame.textureJobHandle.Complete();
+        //            frame.textureBufferRaw = new NativeArray<byte>(frame.ddsHeaderInfo.size, Allocator.Persistent);
+        //        }
 
-                frame.textureJob.textureRawData = frame.textureBufferRaw;
-                frame.textureJob.texturePathCharArray = new NativeArray<byte>(Encoding.UTF8.GetBytes(texturePath), Allocator.TempJob);
+        //        frame.textureJob.textureRawData = frame.textureBufferRaw;
+        //        frame.textureJob.texturePathCharArray = new NativeArray<byte>(Encoding.UTF8.GetBytes(texturePath), Allocator.TempJob);
 
-                frame.textureJobHandle = frame.textureJob.Schedule(frame.textureJobHandle);
-            }
+        //        frame.textureJobHandle = frame.textureJob.Schedule(frame.textureJobHandle);
+        //    }
 
-            return frame;
-        }
+        //    return frame;
+        //}
 
-
-        /// <summary>
-        /// Reads the header of a .ply file on disk into the HeaderPLY struct. Also checks if the file is in the correct format
-        /// </summary>
-        /// <param name="path">Absolute path to the .ply file on disk</param>
-        /// <returns>Returns the header information. Check the error attribute to see if the file has been loaded correctly</returns>
-        private HeaderPLY ReadPLYHeader(string path)
-        {
-            HeaderPLY info = new HeaderPLY();
-
-            BinaryReader reader = new BinaryReader(new FileStream(path, FileMode.Open));
-
-            string line = "";
-
-            while (!line.Contains("format"))
-                line = ReadPLYHeaderLine(reader);
-
-            if (!line.Contains("binary"))
-            {
-                Debug.LogError("PLY File contains ascíi data, which is not supported. " +
-                    "Please use the included Converter Tool to convert your files into the right format");
-                info.error = true;
-                return info;
-            }
-
-            if (!line.Contains("little_endian"))
-            {
-                Debug.LogError("PLY File contains data in big-endian format, which is not supported. " +
-                    "Please use the included Converter Tool to convert your files into the right format");
-                info.error = true;
-                return info;
-            }
-
-            while (!line.Contains("element vertex"))
-                line = ReadPLYHeaderLine(reader);
-
-            string[] lineElements = line.Split(' ');
-
-            info.vertexCount = Int32.Parse(lineElements[2]);
-            info.indexCount = info.vertexCount;
-
-            line = ReadPLYHeaderLine(reader);
-
-            if (line.Contains("double"))
-            {
-                Debug.LogError("PLY File contains 64-bit floats (Double) numbers, which is not supported. " +
-                    "Please use the included Converter Tool to convert your files into the right format");
-                info.error = true;
-                return info;
-            }
-
-            while (!line.Contains("float z"))
-                line = ReadPLYHeaderLine(reader);
-
-            line = ReadPLYHeaderLine(reader);
-
-
-            if (line.Contains("uchar red"))
-            {
-                info.meshType = MeshTopology.Points;
-
-                while (!line.Contains("blue"))
-                    line = ReadPLYHeaderLine(reader);
-
-                line = ReadPLYHeaderLine(reader);
-
-                if (!line.Contains("alpha"))
-                {
-                    Debug.LogError("PLY File doesn't contain an alpha channel, which is required. " +
-                        "Please use the included Converter Tool to convert your files into the right format");
-                    info.error = true;
-                    return info;
-                }
-            }
-
-            else
-            {
-                if(line.Contains("property float s"))
-                {
-                    info.hasUVs = true;
-                    string u = line;
-                    string v = ReadPLYHeaderLine(reader);
-                    line = ReadPLYHeaderLine(reader);
-                }
-
-                else
-                {
-                    info.hasUVs = false;
-                }
-
-                if (line.Contains("element face"))
-                {
-                    info.meshType = MeshTopology.Triangles;
-                    string[] elementFaceSplit = line.Split(' ');
-                    info.indexCount = Int32.Parse(elementFaceSplit[2]) * 3;
-                }
-
-                else
-                {
-                    Debug.LogError("PLY File has invalid format. " +
-                        "Please use the included Converter Tool to convert your files into the right format");
-                    info.error = true;
-                    return info;
-                }
-            }
-
-            while (!line.Contains("end_header"))
-            {
-                line = ReadPLYHeaderLine(reader);
-            }
-
-            info.byteCount = (int)reader.BaseStream.Position;
-
-            reader.Close();
-            reader.Dispose();
-
-            return info;
-        }
-
-        public string ReadPLYHeaderLine(BinaryReader reader)
-        {
-            char currentChar = 'a';
-            string s = "";
-
-            while (currentChar != '\r' && currentChar != '\n')
-            {
-                currentChar = reader.ReadChar();
-                s += currentChar;
-            }
-
-            return s;
-        }
-
-        /// <summary>
-        /// Reads the header of a .dds file on disk. Also checks if the file has the correct format
-        /// </summary>
-        /// <param name="path">The absolute path to the .dds file on disk</param>
-        /// <returns>Returns header information. Check the error attribute to see if the file is in the correct format</returns>
-        public HeaderDDS ReadDDSHeader(string path)
-        {
-            HeaderDDS headerDDS = new HeaderDDS();
-
-            BinaryReader ddsReader = new BinaryReader(new FileStream(path, FileMode.Open));
-
-            byte[] headerBytes = ddsReader.ReadBytes(128);
-
-            byte ddsSizeCheck = headerBytes[4];
-            if (ddsSizeCheck != 124)
-            {
-                Debug.LogError("Invalid DDS DXTn texture. Unable to read");
-                headerDDS.error = true;
-                ddsReader.Dispose();
-                return headerDDS;
-            }
-
-            headerDDS.height = headerBytes[13] * 256 + headerBytes[12];
-            headerDDS.width = headerBytes[17] * 256 + headerBytes[16];
-            headerDDS.size = (int)ddsReader.BaseStream.Length - 128;
-
-            ddsReader.Dispose();
-            return headerDDS;
-        }
 
         /// <summary>
         /// This function ensures that all memory resources are unlocated
         /// and all jobs are finished, so that no memory leaks occur.
         /// </summary>
-        public void DisposeAllFrames(bool stopBuffering, bool forceWorkerCompletion, bool disposeTexture)
+        public void DisposeFrameBuffer(bool stopBuffering)
         {
             buffering = !stopBuffering;
 
-            if(frameBuffer != null)
+            if (frameBuffer != null)
             {
                 for (int i = 0; i < frameBuffer.Length; i++)
                 {
-                    DisposeFrame(i, forceWorkerCompletion, disposeTexture);
+                    if (!frameBuffer[i].geoJobHandle.IsCompleted)
+                        frameBuffer[i].geoJobHandle.Complete();
+
+                    if (sequenceConfig.geometryType == GeometryType.point)
+                        if (frameBuffer[i].vertexBufferRaw.Length > 0)
+                            frameBuffer[i].vertexBufferRaw.Dispose();
+
+                    else
+                    {
+                        if (!frameBuffer[i].wasConsumed)
+                            frameBuffer[i].meshArray.Dispose();
+                    }
+
+                    if (!frameBuffer[i].textureJobHandle.IsCompleted)
+                        frameBuffer[i].textureJobHandle.Complete();
+
+                    frameBuffer[i].textureBufferRaw.Dispose();    
                 }
             }
 
-        }
+            frameBuffer = null;
 
-        public bool DisposeFrame(int frameBufferIndex, bool forceWorkerCompletion, bool disposeTexture)
-        {
-            if (frameBuffer != null)
-            {
-                if (forceWorkerCompletion)
-                {
-                    frameBuffer[frameBufferIndex].geoJobHandle.Complete();
-                    frameBuffer[frameBufferIndex].textureJobHandle.Complete();
-                }
-
-                if (frameBuffer[frameBufferIndex].geoJobHandle.IsCompleted && frameBuffer[frameBufferIndex].textureJobHandle.IsCompleted)
-                {
-                    if (!frameBuffer[frameBufferIndex].isDisposed)
-                    {
-                        if (frameBuffer[frameBufferIndex].meshArray.Length > 0)
-                            frameBuffer[frameBufferIndex].meshArray.Dispose();
-
-                        frameBuffer[frameBufferIndex].isDisposed = true;
-                    }
-
-                    if (disposeTexture)
-                    {
-                        if (frameBuffer[frameBufferIndex].textureBufferRaw.Length > 0)
-                            frameBuffer[frameBufferIndex].textureBufferRaw.Dispose();
-                    }
-
-                    return true;
-                }
-
-                return false;
-            }
-
-            return false;
         }
     }
 
     public struct ReadGeometryJob : IJob
     {
+        public NativeArray<byte> vertexBuffer;
         public Mesh.MeshData mesh;
         public bool readFinished;
-        public HeaderPLY headerInfo;
+        public int headerSize;
+        public int vertexCount;
+        public int indiceCount;
+        public GeometryType geoType;
 
         [DeallocateOnJobCompletion]
         public NativeArray<byte> pathCharArray;
@@ -696,63 +507,43 @@ namespace BuildingVolumes.Streaming
             //We read all bytes into a buffer at once, much quicker than doing it in many shorter reads.
             //This buffer only contains the raw mesh data without the header
             BinaryReader reader = new BinaryReader(new FileStream(path, FileMode.Open));
-            reader.BaseStream.Position = headerInfo.byteCount;
-            byte[] byteBuffer = reader.ReadBytes((int)(reader.BaseStream.Length - headerInfo.byteCount));
+            reader.BaseStream.Position = headerSize;
+            byte[] byteBuffer = reader.ReadBytes((int)(reader.BaseStream.Length - headerSize));
             reader.Close();
             reader.Dispose();
 
-            if (headerInfo.meshType == MeshTopology.Points)
+            if (geoType == GeometryType.point)
             {
-                int[] indices = new int[headerInfo.vertexCount];
-
-                for (int i = 0; i < headerInfo.vertexCount; i++)
-                {
-                    indices[i] = i; //If the pointcloud "mesh" doesn't have indices, Unity won't display it, so we make them up here
-                }
-
-                mesh.GetVertexData<byte>().CopyFrom(byteBuffer);
-                mesh.GetIndexData<int>().CopyFrom(indices);
-
-                mesh.subMeshCount = 1;
-                mesh.SetSubMesh(0, new SubMeshDescriptor(0, indices.Length, MeshTopology.Points));
+                NativeArray<byte>.Copy(byteBuffer, vertexBuffer, byteBuffer.Length);
             }
 
-            else if (headerInfo.meshType == MeshTopology.Triangles)
+            else
             {
-                int vertexBufferSize = 0;
+                int vertexBufferSize;
 
-                if(headerInfo.hasUVs)
-                    vertexBufferSize = headerInfo.vertexCount * 5;
+                if (geoType == GeometryType.texturedMesh)
+                    vertexBufferSize = vertexCount * 5;
                 else
-                    vertexBufferSize = headerInfo.vertexCount * 3;
+                    vertexBufferSize = vertexCount * 3;
 
+                NativeArray<byte>.Copy(byteBuffer, mesh.GetVertexData<byte>(), vertexCount * vertexBufferSize * 4);
 
-                float[] vertexBuffer = new float[vertexBufferSize];
-                int[] indicesRaw = new int[headerInfo.indexCount];
-
-                Buffer.BlockCopy(byteBuffer, 0, vertexBuffer, 0, vertexBufferSize * sizeof(float));
-
+                int[] indicesRaw = new int[indiceCount];
                 int facePositionInBuffer = vertexBufferSize * sizeof(float);
                 int sizeOfIndexLine = sizeof(byte) + sizeof(int) * 3;
 
                 //Reading the index is a bit more tricky because each index line contains the number of indices in that line, which we dont want to include
-                for (int i = 0; i < headerInfo.indexCount / 3; i++)
+                for (int i = 0; i < indiceCount / 3; i++)
                 {
                     Buffer.BlockCopy(byteBuffer, facePositionInBuffer + sizeOfIndexLine * i + sizeof(byte), indicesRaw, i * 3 * sizeof(int), 3 * sizeof(int));
                 }
 
-                NativeArray<float> verts = new NativeArray<float>(vertexBuffer, Allocator.Temp);
-                NativeArray<int> indices = new NativeArray<int>(indicesRaw, Allocator.Temp);
-
-                mesh.GetVertexData<float>().CopyFrom(verts);
-                mesh.GetIndexData<int>().CopyFrom(indices);
-
+                NativeArray<int>.Copy(indicesRaw, mesh.GetIndexData<int>());
                 mesh.subMeshCount = 1;
-                mesh.SetSubMesh(0, new SubMeshDescriptor(0, indices.Length, MeshTopology.Triangles));
+                mesh.SetSubMesh(0, new SubMeshDescriptor(0, indicesRaw.Length, MeshTopology.Triangles));
             }
 
             readFinished = true;
-
         }
     }
 
