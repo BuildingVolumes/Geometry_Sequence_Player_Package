@@ -24,10 +24,14 @@ namespace BuildingVolumes.Streaming
 
         public Material pointcloudMaterial;
         public Material meshMaterial;
+        public float pointSize;
 
-        ComputeShader pointcloudCompute;
-        PointcloudRenderer pointcloudRenderer;
+        public PointcloudRenderer pointcloudRenderer;
 
+        MeshFilter thumbnailMeshFilter;
+        MeshRenderer thumbnailMeshRenderer;
+        PointcloudRenderer thumbnailPCRenderer;
+        BufferedGeometryReader thumbnailReader;
 
         bool readerIsReady = false;
 
@@ -67,47 +71,41 @@ namespace BuildingVolumes.Streaming
         /// <param name="pathToSequence"></param>
         public void LoadEditorThumbnail(string pathToSequence)
         {
-            //            Frame thumbnail = new Frame();
+            ClearEditorThumbnail();
 
-            //            if (Directory.Exists(pathToSequence))
-            //            {
-            //                BufferedGeometryReader reader = new BufferedGeometryReader(pathToSequence, 1);
+            if (Directory.Exists(pathToSequence))
+            {
+                thumbnailReader = new BufferedGeometryReader(pathToSequence, 1);
+                Frame thumbnail = thumbnailReader.frameBuffer[0];
 
-            //                if (reader.plyFilePaths.Length > 0 && reader.texturesFilePath == null)
-            //                    thumbnail = reader.LoadSingleFrame(reader.plyFilePaths[0], null);
+                thumbnailReader.LoadFrameImmediate(thumbnail, 0);
 
-            //                else if (reader.plyFilePaths.Length > 0 && reader.texturesFilePath.Length > 0)
-            //                    thumbnail = reader.LoadSingleFrame(reader.plyFilePaths[0], reader.texturesFilePath[0]);
+                thumbnailMeshRenderer = GetComponent<MeshRenderer>();
+                thumbnailMeshFilter = GetComponent<MeshFilter>();
+                thumbnailPCRenderer = GetComponent<PointcloudRenderer>();
 
-            //                MeshRenderer meshRenderer = GetComponent<MeshRenderer>();
-            //                MeshFilter meshFilter = GetComponent<MeshFilter>();
+                if (!thumbnailMeshFilter)
+                    thumbnailMeshFilter = gameObject.AddComponent<MeshFilter>();
+                if (!thumbnailMeshRenderer)
+                    thumbnailMeshRenderer = gameObject.AddComponent<MeshRenderer>();
+                if (!thumbnailPCRenderer)
+                {
+                    thumbnailPCRenderer = gameObject.AddComponent<PointcloudRenderer>();
+                    thumbnailPCRenderer.SetupPointcloudRenderer(thumbnailReader.sequenceConfig.maxVertexCount, thumbnailMeshFilter);
+                    thumbnailPCRenderer.SubscribeToEditorRender();
+                }
 
-            //                if (!meshFilter)
-            //                    meshFilter = gameObject.AddComponent<MeshFilter>();
-            //                if (!meshRenderer)
-            //                    meshRenderer = gameObject.AddComponent<MeshRenderer>();
+                thumbnailMeshFilter.hideFlags = HideFlags.DontSave | HideFlags.HideInInspector;
+                thumbnailMeshRenderer.hideFlags = HideFlags.DontSave | HideFlags.HideInInspector;
+                thumbnailPCRenderer.hideFlags = HideFlags.DontSave | HideFlags.HideInInspector;
 
-            //                thumbnail.textureMode = TextureMode.None;
+                if (thumbnail.geometryType == SequenceConfiguration.GeometryType.point)
+                    thumbnailMeshRenderer.material = pointcloudMaterial;
+                else
+                    thumbnailMeshRenderer.material = meshMaterial;
 
-            //                if (thumbnail.plyHeaderInfo.meshType == MeshTopology.Points)
-            //                    meshRenderer.material = pointcloudMaterial;
-
-            //                else
-            //                {
-            //                    meshRenderer.material = meshMaterial;
-            //                    if (thumbnail.textureBufferRaw.Length > 0)
-            //                        thumbnail.textureMode = TextureMode.PerFrame;
-            //                }
-
-            //                ShowFrameData(thumbnail, meshRenderer, meshFilter);
-
-            //                if (thumbnail.textureBufferRaw.Length > 0)
-            //                    thumbnail.textureBufferRaw.Dispose();
-
-            //#if UNITY_EDITOR
-            //                EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
-            //#endif
-            //            }
+                ShowFrameData(thumbnail, thumbnailMeshFilter, gameObject, thumbnailPCRenderer, thumbnailReader.sequenceConfig);
+            }
         }
 
         /// <summary>
@@ -115,13 +113,14 @@ namespace BuildingVolumes.Streaming
         /// </summary>
         public void ClearEditorThumbnail()
         {
-            MeshRenderer meshRenderer = GetComponent<MeshRenderer>();
-            MeshFilter meshFilter = GetComponent<MeshFilter>();
+            if (thumbnailReader != null)
+            {
+                thumbnailReader.DisposeFrameBuffer(false);
+                thumbnailReader = null;
+            }
 
-            if (meshFilter)
-                DestroyImmediate(meshFilter);
-            if (!meshRenderer)
-                DestroyImmediate(meshRenderer);
+            if(thumbnailPCRenderer != null)
+                thumbnailPCRenderer.UnSubscribeFromEditorRender();
         }
 
         /// <summary>
@@ -174,7 +173,7 @@ namespace BuildingVolumes.Streaming
                 if (frameBufferIndex > -1)
                 {
                     //The frame has been loaded and we'll show the model (& texture)
-                    ShowFrameData(bufferedReader.frameBuffer[frameBufferIndex], streamedMeshFilter);
+                    ShowFrameData(bufferedReader.frameBuffer[frameBufferIndex], streamedMeshFilter, streamedMeshObject, pointcloudRenderer, bufferedReader.sequenceConfig);
                     bufferedReader.frameBuffer[frameBufferIndex].wasConsumed = true;
 
                     float decay = 0.95f;
@@ -193,6 +192,7 @@ namespace BuildingVolumes.Streaming
             //TODO: Buffering callback
 
         }
+
 
         bool SetupMesh()
         {
@@ -244,12 +244,6 @@ namespace BuildingVolumes.Streaming
 
                 streamedMeshRenderer.material = new Material(pointcloudMaterial);
                 pointcloudRenderer = streamedMeshObject.AddComponent<PointcloudRenderer>();
-
-                if (pointcloudCompute == null)
-                    pointcloudCompute = Resources.Load("PointcloudCompute") as ComputeShader;
-
-                pointcloudRenderer.computeShader = pointcloudCompute;
-
                 pointcloudRenderer.SetupPointcloudRenderer(bufferedReader.sequenceConfig.maxVertexCount, streamedMeshFilter);
             }
 
@@ -319,9 +313,9 @@ namespace BuildingVolumes.Streaming
         /// Display mesh and texture data from a frame buffer
         /// </summary>
         /// <param name="frame"></param>
-        public void ShowFrameData(Frame frame, MeshFilter meshFilter)
+        public void ShowFrameData(Frame frame, MeshFilter meshFilter, GameObject streamObject, PointcloudRenderer pcRenderer, SequenceConfiguration config)
         {
-            ShowGeometryData(frame, meshFilter);
+            ShowGeometryData(frame, meshFilter, streamObject, pcRenderer, config);
 
             //if (frame.ddsHeaderInfo.size > 0)
             //{
@@ -334,7 +328,7 @@ namespace BuildingVolumes.Streaming
         /// Reads mesh data from a native array buffer and disposes of it right after 
         /// </summary>
         /// <param name="frame"></param>
-        void ShowGeometryData(Frame frame, MeshFilter meshFilter)
+        void ShowGeometryData(Frame frame, MeshFilter meshFilter, GameObject streamObject, PointcloudRenderer pcRenderer, SequenceConfiguration config)
         {
             frame.geoJobHandle.Complete();
 
@@ -344,28 +338,17 @@ namespace BuildingVolumes.Streaming
             }
 
             Vector3 offset;
-            if (streamedMeshObject == null)
+            if (streamObject == null)
                 offset = transform.position;
             else
-                offset = streamedMeshObject.transform.position;
+                offset = streamObject.transform.position;
 
-            List<float> bounds = bufferedReader.sequenceConfig.maxBounds;
+            Bounds bounds = config.GetBounds();
+            meshFilter.sharedMesh.bounds = new Bounds(bounds.center + offset, bounds.size);
 
-            Vector3 center = Vector3.zero;
-            center.x = bounds[0] + bounds[3];
-            center.y = bounds[1] + bounds[4];
-            center.z = bounds[2] + bounds[5];
-
-            Vector3 size = Vector3.zero;
-            size.x = Mathf.Abs(bounds[0]) + Mathf.Abs(bounds[3]);
-            size.y = Mathf.Abs(bounds[1]) + Mathf.Abs(bounds[4]);
-            size.z = Mathf.Abs(bounds[2]) + Mathf.Abs(bounds[5]);
-
-            meshFilter.sharedMesh.bounds = new Bounds(center, size);
-
-            if (bufferedReader.sequenceConfig.geometryType == SequenceConfiguration.GeometryType.point)
+            if (config.geometryType == SequenceConfiguration.GeometryType.point)
             {
-                pointcloudRenderer.Render(frame.vertexBufferRaw, frame.vertexCount, meshFilter.transform);
+                pcRenderer.SetPointcloudData(frame.vertexBufferRaw, frame.vertexCount, meshFilter.transform);
             }
 
             else
@@ -373,9 +356,6 @@ namespace BuildingVolumes.Streaming
                 Mesh.ApplyAndDisposeWritableMeshData(frame.meshArray, meshFilter.sharedMesh);
                 meshFilter.sharedMesh.RecalculateNormals();
             }
-
-
-
 
         }
 
@@ -410,6 +390,16 @@ namespace BuildingVolumes.Streaming
 
             if (meshMaterial == null)
                 meshMaterial = Resources.Load("GS_MeshMaterial") as Material;
+        }
+
+        public void SetPointSize(float size)
+        {
+            pointSize = size;
+
+            if(pointcloudRenderer != null)
+                pointcloudRenderer.ChangePointSize(size);
+            if(thumbnailPCRenderer != null)
+                thumbnailPCRenderer.ChangePointSize(size);
         }
 
 

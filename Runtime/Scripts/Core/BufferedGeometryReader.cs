@@ -15,12 +15,13 @@ using static BuildingVolumes.Streaming.SequenceConfiguration;
 namespace BuildingVolumes.Streaming
 {
 
-    public struct Frame
+    public class Frame
     {
         public Mesh.MeshDataArray meshArray; //When the data is a mesh
         public NativeArray<byte> vertexBufferRaw; //When the data is a pointcloud
         public NativeArray<byte> textureBufferRaw;
 
+        public SequenceConfiguration.GeometryType geometryType;
         public SequenceConfiguration.TextureMode textureMode;
 
         public int headerSize;
@@ -34,6 +35,15 @@ namespace BuildingVolumes.Streaming
 
         public int playbackIndex;
         public bool wasConsumed;
+
+        public Frame()
+        {
+            headerSize = 0;
+            vertexCount = 0;
+            indiceCount = 0;
+            playbackIndex = 0;
+            wasConsumed = true;
+        }
     }
 
     public enum TextureMode { None, Single, PerFrame };
@@ -104,81 +114,14 @@ namespace BuildingVolumes.Streaming
 
             for (int i = 0; i < frameBuffer.Length; i++)
             {
-                frameBuffer[i].wasConsumed = true;
+                frameBuffer[i] = new Frame();
+                AllocateFrame(frameBuffer[i], sequenceConfig.geometryType, sequenceConfig.textureMode, sequenceConfig.maxVertexCount, sequenceConfig.maxIndiceCount, sequenceConfig.textureSize);
                 frameBuffer[i].playbackIndex = -1;
-
-                VertexAttributeDescriptor[] layout = new VertexAttributeDescriptor[0];
-
-                switch (sequenceConfig.geometryType)
-                {
-                    case GeometryType.point:
-                        layout = new[] {
-                    new VertexAttributeDescriptor(VertexAttribute.Position, VertexAttributeFormat.Float32, 3),
-                    new VertexAttributeDescriptor(VertexAttribute.Color, VertexAttributeFormat.UNorm8, 4) };
-                        break;
-
-                    case GeometryType.mesh:
-                        layout = new[] { new VertexAttributeDescriptor(VertexAttribute.Position, VertexAttributeFormat.Float32, 3) };
-                        break;
-
-                    case GeometryType.texturedMesh:
-                        layout = new[] { new VertexAttributeDescriptor(VertexAttribute.Position, VertexAttributeFormat.Float32, 3),
-                    new VertexAttributeDescriptor(VertexAttribute.TexCoord0, VertexAttributeFormat.Float32, 2) };
-                        break;
-
-                    default:
-                        break;
-                }
-
-                //Allocate every frame with the highest amount of vertices being used in this sequence. 
-                //This way, we can re-use the meshArrays, instead of re-allocating them each frame
-
-                if (sequenceConfig.geometryType == GeometryType.point)
-                    frameBuffer[i].vertexBufferRaw = new NativeArray<byte>(sequenceConfig.maxVertexCount * 4 * 4, Allocator.Persistent);
-
-                else
-                {
-                    frameBuffer[i].meshArray = Mesh.AllocateWritableMeshData(1);
-                    frameBuffer[i].meshArray[0].SetVertexBufferParams(sequenceConfig.maxVertexCount, layout);
-                    frameBuffer[i].meshArray[0].SetIndexBufferParams(sequenceConfig.maxIndiceCount, IndexFormat.UInt32);
-                }
-            }
-
-            if (sequenceConfig.textureMode != SequenceConfiguration.TextureMode.None)
-            {
-                try
-                {
-                    texturesFilePath = new List<string>(Directory.GetFiles(folder, "*.dds")).OrderBy(file =>
-                    Regex.Replace(file, @"\d+", match => match.Value.PadLeft(9, '0'))).ToArray<string>();
-                }
-
-                catch (Exception e)
-                {
-                    UnityEngine.Debug.LogError("Texture could not be found!" + " Error: " + e.Message);
-                    return false;
-                }
-
-                if (plyFilePaths.Length == 0)
-                {
-                    UnityEngine.Debug.LogError("Could not find any .dds files in the directory!");
-                    return false;
-                }
-            }
-
-            for (int i = 0; i < frameBuffer.Length; i++)
-            {
-                frameBuffer[i].textureMode = sequenceConfig.textureMode;
-
-                if (sequenceConfig.textureMode == SequenceConfiguration.TextureMode.PerFrame)
-                    frameBuffer[i].textureBufferRaw = new NativeArray<byte>(sequenceConfig.textureSize, Allocator.Persistent);
-                else
-                    frameBuffer[i].textureBufferRaw = new NativeArray<byte>(1, Allocator.Persistent); //We allocate one byte to indicate that this texture buffer is not used
-
             }
 
             return true;
-        }
 
+        }
 
         /// <summary>
         /// Loads new frames in the buffer if there are free slots. Call this every frame
@@ -248,20 +191,74 @@ namespace BuildingVolumes.Streaming
             JobHandle.ScheduleBatchedJobs();
         }
 
-        public Frame LoadSingleFrame(string geoPath, string texturePath)
+        public void LoadFrameImmediate(Frame frame, int index)
         {
-            Frame newFrame = new Frame();
-            newFrame.meshArray = Mesh.AllocateWritableMeshData(1);
-            newFrame = ScheduleGeometryReadJob(newFrame, geoPath);
-            newFrame.geoJobHandle.Complete();
+            frame.headerSize = sequenceConfig.headerSizes[index];
+            frame.vertexCount = sequenceConfig.verticeCounts[index];
+            frame.indiceCount = sequenceConfig.indiceCounts[index];
+            frame = ScheduleGeometryReadJob(frame, plyFilePaths[index]);
+            frame.geoJobHandle.Complete();
 
-            if (texturePath != null && texturePath.Length > 0)
+            //if(sequenceConfig.textureMode != SequenceConfiguration.TextureMode.None)
+            //{
+            //    frame = ScheduleTextureJob(frame, texturesFilePath[index]);
+            //    frame.textureJobHandle.Complete();
+            //}
+
+        }
+
+        void AllocateFrame(Frame frame, GeometryType geoType, SequenceConfiguration.TextureMode textureMode, int maxVertexCount, int maxIndiceCount, int maxTextureSize)
+        {
+            VertexAttributeDescriptor[] layout = new VertexAttributeDescriptor[0];
+
+            switch (sequenceConfig.geometryType)
             {
-                //newFrame = ScheduleTextureJob(newFrame, texturePath);
-                newFrame.textureJobHandle.Complete();
+                case GeometryType.point:
+                    layout = new[] {
+                    new VertexAttributeDescriptor(VertexAttribute.Position, VertexAttributeFormat.Float32, 3),
+                    new VertexAttributeDescriptor(VertexAttribute.Color, VertexAttributeFormat.UNorm8, 4) };
+                    break;
+
+                case GeometryType.mesh:
+                    layout = new[] { new VertexAttributeDescriptor(VertexAttribute.Position, VertexAttributeFormat.Float32, 3) };
+                    break;
+
+                case GeometryType.texturedMesh:
+                    layout = new[] { new VertexAttributeDescriptor(VertexAttribute.Position, VertexAttributeFormat.Float32, 3),
+                    new VertexAttributeDescriptor(VertexAttribute.TexCoord0, VertexAttributeFormat.Float32, 2) };
+                    break;
+
+                default:
+                    break;
             }
 
-            return newFrame;
+            //Allocate every frame with the highest amount of vertices being used in this sequence. 
+            //This way, we can re-use the meshArrays, instead of re-allocating them each frame
+            frame.geometryType = geoType;
+            frame.meshArray = Mesh.AllocateWritableMeshData(1);
+
+            if (geoType == GeometryType.point)
+            {
+                frame.vertexBufferRaw = new NativeArray<byte>(maxVertexCount * 4 * 4, Allocator.Persistent);
+            }
+
+            else
+            {
+                //We still need to allocate the Array, even if it's not used
+                frame.vertexBufferRaw = new NativeArray<byte>(1, Allocator.Persistent);
+                frame.meshArray[0].SetVertexBufferParams(maxVertexCount, layout);
+                frame.meshArray[0].SetIndexBufferParams(maxIndiceCount, IndexFormat.UInt32);
+            }
+
+            for (int i = 0; i < frameBuffer.Length; i++)
+            {
+                frame.textureMode = textureMode;
+
+                if (textureMode == SequenceConfiguration.TextureMode.PerFrame)
+                    frame.textureBufferRaw = new NativeArray<byte>(maxTextureSize, Allocator.Persistent);
+                else
+                    frame.textureBufferRaw = new NativeArray<byte>(1, Allocator.Persistent);
+            }
         }
 
 
@@ -400,17 +397,8 @@ namespace BuildingVolumes.Streaming
             frame.geoJob.headerSize = frame.headerSize;
             frame.geoJob.vertexCount = frame.vertexCount;
             frame.geoJob.indiceCount = frame.indiceCount;
-
-            if(sequenceConfig.geometryType == GeometryType.point)
-            {
-                frame.geoJob.vertexBuffer = frame.vertexBufferRaw;    
-            }
-
-            else
-            {
-                frame.geoJob.mesh = frame.meshArray[0];
-            }
-
+            frame.geoJob.vertexBuffer = frame.vertexBufferRaw;
+            frame.geoJob.mesh = frame.meshArray[0];
             frame.geoJobHandle = frame.geoJob.Schedule(frame.geoJobHandle);
 
             return frame;
@@ -457,23 +445,12 @@ namespace BuildingVolumes.Streaming
             {
                 for (int i = 0; i < frameBuffer.Length; i++)
                 {
-                    if (!frameBuffer[i].geoJobHandle.IsCompleted)
-                        frameBuffer[i].geoJobHandle.Complete();
+                    frameBuffer[i].geoJobHandle.Complete();
+                    frameBuffer[i].vertexBufferRaw.Dispose();
+                    frameBuffer[i].meshArray.Dispose();
 
-                    if (sequenceConfig.geometryType == GeometryType.point)
-                        if (frameBuffer[i].vertexBufferRaw.Length > 0)
-                            frameBuffer[i].vertexBufferRaw.Dispose();
-
-                    else
-                    {
-                        if (!frameBuffer[i].wasConsumed)
-                            frameBuffer[i].meshArray.Dispose();
-                    }
-
-                    if (!frameBuffer[i].textureJobHandle.IsCompleted)
-                        frameBuffer[i].textureJobHandle.Complete();
-
-                    frameBuffer[i].textureBufferRaw.Dispose();    
+                    frameBuffer[i].textureJobHandle.Complete();
+                    frameBuffer[i].textureBufferRaw.Dispose();
                 }
             }
 

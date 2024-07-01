@@ -1,9 +1,11 @@
 using System;
 using System.Collections;
 using System.IO;
+using UnityEditor;
+using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.Events;
-
+using UnityEngine.SceneManagement;
 
 namespace BuildingVolumes.Streaming
 {
@@ -53,14 +55,18 @@ namespace BuildingVolumes.Streaming
 
         public void ShowThumbnail(string pathToSequence)
         {
-            if (stream != null)
-                stream.LoadEditorThumbnail(pathToSequence);
+            if (stream == null)
+                stream = GetComponent<GeometrySequenceStream>();
+
+            stream.LoadEditorThumbnail(pathToSequence);
         }
 
         public void ClearThumbnail()
         {
-            if (stream != null)
-                stream.ClearEditorThumbnail();
+            if (stream == null)
+                stream = GetComponent<GeometrySequenceStream>();
+
+            stream.ClearEditorThumbnail();
         }
 
         private void Update()
@@ -89,7 +95,6 @@ namespace BuildingVolumes.Streaming
                 if (GetFrameDropped())
                     playbackEvents.Invoke(this, GSPlayerEvents.FrameDropped);
             }
-
         }
 
         //+++++++++++++++++++++ PLAYBACK API ++++++++++++++++++++++++
@@ -269,7 +274,7 @@ namespace BuildingVolumes.Streaming
         /// </summary>
         public void Show()
         {
-            if(stream.streamedMeshRenderer != null)
+            if (stream.streamedMeshRenderer != null)
                 stream.streamedMeshRenderer.enabled = true;
         }
 
@@ -478,5 +483,68 @@ namespace BuildingVolumes.Streaming
 
         #endregion
     }
+
+
+    [InitializeOnLoad]
+    public class ThumbnailLoadHelper
+    {
+        static bool LoadThumbnailAfterEditorOpen = false;
+
+        static ThumbnailLoadHelper()
+        {
+            EditorSceneManager.sceneOpened += LoadThumbnailOnSceneOpen;
+            EditorSceneManager.sceneClosing += ClearThumbnailOnSceneClosed;
+
+            //Trick to load thumbnail the first time, and only the first time, after Unity has started.
+            if (!SessionState.GetBool("GSSThumbLoadedFirstTime", false))
+            {
+                EditorApplication.update += LoadThumbDelayed;
+                LoadThumbnailAfterEditorOpen = true;
+            }
+
+        }
+
+        static void LoadThumbnailOnSceneOpen(Scene scene1, OpenSceneMode mode)
+        {
+            GeometrySequencePlayer[] players = GameObject.FindObjectsOfType<GeometrySequencePlayer>();
+
+            foreach (GeometrySequencePlayer player in players)
+            {
+                if (player.GetRelativeSequencePath() != null)
+                {
+                    if (player.GetRelativeSequencePath().Length > 0)
+                    {
+                        player.ShowThumbnail(player.GetRelativeSequencePath());
+                    }
+                }
+            }
+        }
+
+        static void ClearThumbnailOnSceneClosed(Scene scene1, bool removingScene)
+        {
+            GeometrySequencePlayer[] players = GameObject.FindObjectsOfType<GeometrySequencePlayer>();
+
+            foreach (GeometrySequencePlayer player in players)
+            {
+                player.ClearThumbnail();
+            }
+        }
+
+        static void LoadThumbDelayed()
+        {
+            if (LoadThumbnailAfterEditorOpen)
+            {
+                LoadThumbnailAfterEditorOpen = false;
+                EditorApplication.update -= LoadThumbDelayed;
+                Scene nullScene = new Scene();
+                LoadThumbnailOnSceneOpen(nullScene, OpenSceneMode.Single);
+                SessionState.SetBool("GSSThumbLoadedFirstTime", true);
+            }
+        }
+
+
+
+    }
+
 
 }

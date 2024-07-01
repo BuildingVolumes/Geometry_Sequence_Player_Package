@@ -10,11 +10,13 @@ namespace BuildingVolumes.Streaming
     [CanEditMultipleObjects]
     public class GeometryStreamGUI : Editor
     {
+        GeometrySequenceStream stream;
+
         SerializedProperty parentTransform;
-        SerializedProperty bounds;
 
         SerializedProperty pointcloudMaterial;
         SerializedProperty meshMaterial;
+        SerializedProperty pointSize;
 
         SerializedProperty bufferSize;
         SerializedProperty useAllThreads;
@@ -28,18 +30,15 @@ namespace BuildingVolumes.Streaming
 
         bool showInfo;
         bool showBufferOptions;
-        bool showMoreSettings;
-
-        BoxBoundsHandle boundingBox = new BoxBoundsHandle();
 
         private void OnEnable()
         {
             parentTransform = serializedObject.FindProperty("parentTransform");
-            bounds = serializedObject.FindProperty("drawBounds");
             
             pointcloudMaterial = serializedObject.FindProperty("pointcloudMaterial");
             meshMaterial = serializedObject.FindProperty("meshMaterial");
-            
+            pointSize = serializedObject.FindProperty("pointSize");
+
             bufferSize = serializedObject.FindProperty("bufferSize");
             useAllThreads = serializedObject.FindProperty("useAllThreads");
             threadCount = serializedObject.FindProperty("threadCount");
@@ -50,7 +49,7 @@ namespace BuildingVolumes.Streaming
             currentFrameTiming = serializedObject.FindProperty("elapsedMsSinceLastFrame");
             smoothedFPS = serializedObject.FindProperty("smoothedFPS");
 
-            GeometrySequenceStream player = (GeometrySequenceStream)target;
+            stream = (GeometrySequenceStream)target;
 
             serializedObject.ApplyModifiedProperties();
 
@@ -65,11 +64,12 @@ namespace BuildingVolumes.Streaming
             EditorGUILayout.PropertyField(pointcloudMaterial);
             EditorGUILayout.PropertyField(meshMaterial);
 
-            showMoreSettings = EditorGUILayout.Foldout(showMoreSettings, "More Settings");
-            if(showMoreSettings)
-            {
-                EditorGUILayout.PropertyField(bounds, new GUIContent("Geometry draw bounds"));
-            }
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField("Point size");
+            float newPointSize = EditorGUILayout.Slider(pointSize.floatValue, 0.001f, 0.03f);
+            if(!Mathf.Approximately(newPointSize, pointSize.floatValue))
+                stream.SetPointSize(newPointSize);
+            EditorGUILayout.EndHorizontal();
 
             showBufferOptions = EditorGUILayout.Foldout(showBufferOptions, "Buffer Options");
             if (showBufferOptions)
@@ -93,35 +93,5 @@ namespace BuildingVolumes.Streaming
 
             serializedObject.ApplyModifiedProperties();
         }
-
-        /// <summary>
-        /// Draw the editable bounding box
-        /// </summary>
-        protected virtual void OnSceneGUI()
-        {
-            GeometrySequenceStream stream = target as GeometrySequenceStream;
-
-            boundingBox.center = stream.drawBounds.center + stream.transform.position;
-            boundingBox.size = stream.drawBounds.size;
-
-            if (boundingBox.size.x <= 0.01 && boundingBox.size.y <= 0.01 && boundingBox.size.z <= 0.01)
-                boundingBox.size = new Vector3(3, 3, 3);
-
-            EditorGUI.BeginChangeCheck();
-            boundingBox.DrawHandle();
-            if (EditorGUI.EndChangeCheck())
-            {
-                // record the target object before setting new values so changes can be undone/redone
-                Undo.RecordObject(stream, "Change Bounds");
-
-                // copy the handle's updated data back to the target object
-                Bounds newBounds = new Bounds();
-                newBounds.center = boundingBox.center - stream.transform.position;
-                newBounds.size = boundingBox.size;
-                stream.drawBounds = newBounds;
-            }
-
-        }
-
     }
 }

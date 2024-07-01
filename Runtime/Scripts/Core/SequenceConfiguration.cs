@@ -57,6 +57,21 @@ namespace BuildingVolumes.Streaming
             return configuration;
         }
 
+        public Bounds GetBounds()
+        {
+            Vector3 center = Vector3.zero;
+            center.x = maxBounds[0] + maxBounds[3];
+            center.y = maxBounds[1] + maxBounds[4];
+            center.z = maxBounds[2] + maxBounds[5];
+
+            Vector3 size = Vector3.zero;
+            size.x = Mathf.Abs(maxBounds[0]) + Mathf.Abs(maxBounds[3]);
+            size.y = Mathf.Abs(maxBounds[1]) + Mathf.Abs(maxBounds[4]);
+            size.z = Mathf.Abs(maxBounds[2]) + Mathf.Abs(maxBounds[5]);
+
+            return new Bounds(center, size);
+        }
+
     }
 }
 
