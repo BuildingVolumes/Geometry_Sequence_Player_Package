@@ -92,7 +92,6 @@ namespace BuildingVolumes.Streaming
                 {
                     thumbnailPCRenderer = gameObject.AddComponent<PointcloudRenderer>();
                     thumbnailPCRenderer.SetupPointcloudRenderer(thumbnailReader.sequenceConfig.maxVertexCount, thumbnailMeshFilter);
-                    thumbnailPCRenderer.SubscribeToEditorRender();
                 }
 
                 thumbnailMeshFilter.hideFlags = HideFlags.DontSave | HideFlags.HideInInspector;
@@ -120,7 +119,7 @@ namespace BuildingVolumes.Streaming
             }
 
             if(thumbnailPCRenderer != null)
-                thumbnailPCRenderer.UnSubscribeFromEditorRender();
+                thumbnailPCRenderer.UnsubscribeFromEditorUpdate();
         }
 
         /// <summary>

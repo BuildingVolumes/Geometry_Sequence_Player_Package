@@ -485,6 +485,9 @@ namespace BuildingVolumes.Streaming
     }
 
 
+    //Thumbnails are dynamically loaded each time the scene is opened, so that they 
+    //won't need to be saved in the scene, which might make the scene file huge
+    //This class helps to detect when a thumbnail load is neccessary
     [InitializeOnLoad]
     public class ThumbnailLoadHelper
     {
@@ -494,13 +497,20 @@ namespace BuildingVolumes.Streaming
         {
             EditorSceneManager.sceneOpened += LoadThumbnailOnSceneOpen;
             EditorSceneManager.sceneClosing += ClearThumbnailOnSceneClosed;
+            EditorSceneManager.sceneClosing += (Scene s, bool b) => ManageThumbnailRenderSubscription(false);
 
             //Trick to load thumbnail the first time, and only the first time, after Unity has started.
+            //We subscribe to EditorApplication.update instead of calling it directly, so that the 
+            //LoadThumbDelayed function only gets called after everything has been loaded
             if (!SessionState.GetBool("GSSThumbLoadedFirstTime", false))
             {
                 EditorApplication.update += LoadThumbDelayed;
                 LoadThumbnailAfterEditorOpen = true;
             }
+
+            //After every recompile, the subscription to EditorApplication.Update gets broken
+            //So we need to re-subscribe after every recompile
+            ManageThumbnailRenderSubscription(true);
 
         }
 
@@ -539,6 +549,19 @@ namespace BuildingVolumes.Streaming
                 Scene nullScene = new Scene();
                 LoadThumbnailOnSceneOpen(nullScene, OpenSceneMode.Single);
                 SessionState.SetBool("GSSThumbLoadedFirstTime", true);
+            }
+        }
+
+        static void ManageThumbnailRenderSubscription(bool subscribe)
+        {
+            PointcloudRenderer[] renderers = GameObject.FindObjectsOfType<PointcloudRenderer>();
+
+            foreach (PointcloudRenderer renderer in renderers)
+            {
+                if (subscribe)
+                    renderer.SubscribeToEditorUpdate();
+                else
+                    renderer.UnsubscribeFromEditorUpdate();
             }
         }
 

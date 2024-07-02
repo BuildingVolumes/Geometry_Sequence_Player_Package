@@ -105,7 +105,7 @@ namespace BuildingVolumes.Streaming
 
                             else
                             {
-                                EditorUtility.DisplayDialog("Metafile not found", "Could not find Sequence Metafile, which is required in this version of the plugin. Please re-convert/generate your files with the converter tool!", "Okay");
+                                EditorUtility.DisplayDialog("Metafile not found", "Could not find sequence.json metafile, which is required since version 1.1.0 of the plugin. Please re-convert your files with the converter tool!", "Okay");
                             }
                         }
 

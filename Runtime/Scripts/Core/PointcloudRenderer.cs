@@ -8,9 +8,8 @@ using UnityEngine.Rendering;
 namespace BuildingVolumes.Streaming
 {    public class PointcloudRenderer : MonoBehaviour
     {
-        public ComputeShader computeShader;        
-
-        public float pointScale = 0.005f;
+        [HideInInspector] public ComputeShader computeShader;
+        [HideInInspector] public float pointScale = 0.005f;
 
         GraphicsBuffer pointSourceBuffer;
         GraphicsBuffer vertexBuffer;
@@ -24,7 +23,6 @@ namespace BuildingVolumes.Streaming
         int sourcePointCount;
         Transform pointSourceTransform;
         bool isDataSet;
-        bool subscribedToUpdate;
 
         MeshFilter outputMeshFilter;
         Mesh outputMesh;
@@ -69,9 +67,6 @@ namespace BuildingVolumes.Streaming
 
         public void Render()
         {
-            if (this == null)
-                UnSubscribeFromEditorRender();
-
             if (!isDataSet || !enabled)
                 return;
 
@@ -115,7 +110,6 @@ namespace BuildingVolumes.Streaming
             Render();
             SceneView.RepaintAll();
 #endif
-
         }
 
         public int SetupPointcloudRenderer(int maxPointCount, MeshFilter renderToMeshFilter)
@@ -154,47 +148,11 @@ namespace BuildingVolumes.Streaming
 
             pointSourceBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Raw, maxPointCount * 4 * 4, 4 * 4);
 
+#if UNITY_EDITOR
+            SubscribeToEditorUpdate();
+#endif
+
             return maxPointCount;
-        }
-
-        public void SubscribeToEditorRender()
-        {
-            EditorApplication.focusChanged += SubscripteToUpdate;
-            SubscripteToUpdate(true);
-        }
-
-        void SubscripteToUpdate(bool subscribe)
-        {
-            if (subscribe)
-            {
-                if (!subscribedToUpdate)
-                {
-                    SceneView.beforeSceneGui += RenderSceneView;
-                    Debug.Log("Subscribed");
-                    subscribedToUpdate = true;
-                }
-            }
-
-            else
-            {
-                SceneView.beforeSceneGui -= RenderSceneView;
-                Debug.Log("Unssub");
-                subscribedToUpdate = false;
-            }
-        }
-
-        void RenderSceneView(SceneView sceneView)
-        {
-            Render();
-        }
-
-        public void UnSubscribeFromEditorRender()
-        {
-            EditorApplication.focusChanged -= SubscripteToUpdate;
-            SceneView.beforeSceneGui -= RenderSceneView;
-            Debug.Log("Unsubbed");
-
-            OnDisable();
         }
 
         private void OnDisable()
@@ -224,6 +182,32 @@ namespace BuildingVolumes.Streaming
             if (worldToCameraBuffer != null)
                 worldToCameraBuffer.Release();
         }
+
+        #region RenderInEditor
+
+        public void SubscribeToEditorUpdate()
+        {
+            SceneView.beforeSceneGui += RenderInEditor;
+        }
+
+        public void RenderInEditor(SceneView view)
+        {
+            //Sometimes this script is still subscriped even when it doesn't exist anymore
+            if (this == null)
+            {
+                UnsubscribeFromEditorUpdate();
+                return;
+            }
+
+            Render();
+        }
+
+        public void UnsubscribeFromEditorUpdate()
+        {
+            SceneView.beforeSceneGui -= RenderInEditor;
+        }
+
+        #endregion
     }
 }
 
