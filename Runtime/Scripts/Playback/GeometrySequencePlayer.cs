@@ -16,8 +16,6 @@ namespace BuildingVolumes.Streaming
         [SerializeField]
         string relativePath = "";
         [SerializeField]
-        string absolutePath = "";
-        [SerializeField]
         GeometrySequenceStream.PathType pathRelation;
 
         [SerializeField]
@@ -129,7 +127,7 @@ namespace BuildingVolumes.Streaming
         /// <returns>True when the sequence could sucessfully be reloaded, false if an error has occured</returns>
         public bool LoadCurrentSequence(bool autoplay = false, bool buffer = true)
         {
-            bool sucess = stream.ChangeSequence(absolutePath, playbackFPS);
+            bool sucess = stream.ChangeSequence(GetAbsoluteSequencePath(), playbackFPS);
 
             if (sucess)
             {
@@ -157,21 +155,6 @@ namespace BuildingVolumes.Streaming
 
             this.relativePath = path;
             pathRelation = relativeTo;
-            Pause();
-
-            //Set the correct absolute path depending on the files location
-            if (pathRelation == GeometrySequenceStream.PathType.RelativeToDataPath)
-                absolutePath = Path.Combine(UnityEngine.Application.dataPath, this.relativePath);
-
-            if (pathRelation == GeometrySequenceStream.PathType.RelativeToStreamingAssets)
-                absolutePath = Path.Combine(UnityEngine.Application.streamingAssetsPath, this.relativePath);
-
-            if (pathRelation == GeometrySequenceStream.PathType.RelativeToPersistentDataPath)
-                absolutePath = Path.Combine(UnityEngine.Application.persistentDataPath, this.relativePath);
-
-            if (pathRelation == GeometrySequenceStream.PathType.AbsolutePath)
-                absolutePath = this.relativePath;
-
             return;
         }
 
@@ -294,6 +277,22 @@ namespace BuildingVolumes.Streaming
         /// <returns></returns>
         public string GetAbsoluteSequencePath()
         {
+            string absolutePath = "";
+
+            //Set the correct absolute path depending on the files location
+            if (pathRelation == GeometrySequenceStream.PathType.RelativeToDataPath)
+                absolutePath = Path.Combine(UnityEngine.Application.dataPath, this.relativePath);
+
+            if (pathRelation == GeometrySequenceStream.PathType.RelativeToStreamingAssets)
+                absolutePath = Path.Combine(UnityEngine.Application.streamingAssetsPath, this.relativePath);
+
+            if (pathRelation == GeometrySequenceStream.PathType.RelativeToPersistentDataPath)
+                absolutePath = Path.Combine(UnityEngine.Application.persistentDataPath, this.relativePath);
+
+            if (pathRelation == GeometrySequenceStream.PathType.AbsolutePath)
+                absolutePath = this.relativePath;
+
+
             return absolutePath;
         }
 
@@ -483,91 +482,5 @@ namespace BuildingVolumes.Streaming
 
         #endregion
     }
-
-
-    //Thumbnails are dynamically loaded each time the scene is opened, so that they 
-    //won't need to be saved in the scene, which might make the scene file huge
-    //This class helps to detect when a thumbnail load is neccessary
-    [InitializeOnLoad]
-    public class ThumbnailLoadHelper
-    {
-        static bool LoadThumbnailAfterEditorOpen = false;
-
-        static ThumbnailLoadHelper()
-        {
-            EditorSceneManager.sceneOpened += LoadThumbnailOnSceneOpen;
-            EditorSceneManager.sceneClosing += ClearThumbnailOnSceneClosed;
-            EditorSceneManager.sceneClosing += (Scene s, bool b) => ManageThumbnailRenderSubscription(false);
-
-            //Trick to load thumbnail the first time, and only the first time, after Unity has started.
-            //We subscribe to EditorApplication.update instead of calling it directly, so that the 
-            //LoadThumbDelayed function only gets called after everything has been loaded
-            if (!SessionState.GetBool("GSSThumbLoadedFirstTime", false))
-            {
-                EditorApplication.update += LoadThumbDelayed;
-                LoadThumbnailAfterEditorOpen = true;
-            }
-
-            //After every recompile, the subscription to EditorApplication.Update gets broken
-            //So we need to re-subscribe after every recompile
-            ManageThumbnailRenderSubscription(true);
-
-        }
-
-        static void LoadThumbnailOnSceneOpen(Scene scene1, OpenSceneMode mode)
-        {
-            GeometrySequencePlayer[] players = GameObject.FindObjectsOfType<GeometrySequencePlayer>();
-
-            foreach (GeometrySequencePlayer player in players)
-            {
-                if (player.GetRelativeSequencePath() != null)
-                {
-                    if (player.GetRelativeSequencePath().Length > 0)
-                    {
-                        player.ShowThumbnail(player.GetRelativeSequencePath());
-                    }
-                }
-            }
-        }
-
-        static void ClearThumbnailOnSceneClosed(Scene scene1, bool removingScene)
-        {
-            GeometrySequencePlayer[] players = GameObject.FindObjectsOfType<GeometrySequencePlayer>();
-
-            foreach (GeometrySequencePlayer player in players)
-            {
-                player.ClearThumbnail();
-            }
-        }
-
-        static void LoadThumbDelayed()
-        {
-            if (LoadThumbnailAfterEditorOpen)
-            {
-                LoadThumbnailAfterEditorOpen = false;
-                EditorApplication.update -= LoadThumbDelayed;
-                Scene nullScene = new Scene();
-                LoadThumbnailOnSceneOpen(nullScene, OpenSceneMode.Single);
-                SessionState.SetBool("GSSThumbLoadedFirstTime", true);
-            }
-        }
-
-        static void ManageThumbnailRenderSubscription(bool subscribe)
-        {
-            PointcloudRenderer[] renderers = GameObject.FindObjectsOfType<PointcloudRenderer>();
-
-            foreach (PointcloudRenderer renderer in renderers)
-            {
-                if (subscribe)
-                    renderer.SubscribeToEditorUpdate();
-                else
-                    renderer.UnsubscribeFromEditorUpdate();
-            }
-        }
-
-
-
-    }
-
 
 }

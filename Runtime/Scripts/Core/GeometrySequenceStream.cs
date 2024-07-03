@@ -3,7 +3,6 @@ using System.IO;
 using Unity.Collections;
 using Unity.Jobs.LowLevel.Unsafe;
 using UnityEditor;
-using System.Collections.Generic;
 
 #if UNITY_EDITOR
 using UnityEditor.SceneManagement;
@@ -63,63 +62,6 @@ namespace BuildingVolumes.Streaming
 
             if (GetComponent<MeshRenderer>())
                 GetComponent<MeshRenderer>().enabled = false;
-        }
-
-        /// <summary>
-        /// Loads and shows a thumbnail of the clip that was just opened. Only shown in the editor
-        /// </summary>
-        /// <param name="pathToSequence"></param>
-        public void LoadEditorThumbnail(string pathToSequence)
-        {
-            ClearEditorThumbnail();
-
-            if (Directory.Exists(pathToSequence))
-            {
-                thumbnailReader = new BufferedGeometryReader(pathToSequence, 1);
-                Frame thumbnail = thumbnailReader.frameBuffer[0];
-
-                thumbnailReader.LoadFrameImmediate(thumbnail, 0);
-
-                thumbnailMeshRenderer = GetComponent<MeshRenderer>();
-                thumbnailMeshFilter = GetComponent<MeshFilter>();
-                thumbnailPCRenderer = GetComponent<PointcloudRenderer>();
-
-                if (!thumbnailMeshFilter)
-                    thumbnailMeshFilter = gameObject.AddComponent<MeshFilter>();
-                if (!thumbnailMeshRenderer)
-                    thumbnailMeshRenderer = gameObject.AddComponent<MeshRenderer>();
-                if (!thumbnailPCRenderer)
-                {
-                    thumbnailPCRenderer = gameObject.AddComponent<PointcloudRenderer>();
-                    thumbnailPCRenderer.SetupPointcloudRenderer(thumbnailReader.sequenceConfig.maxVertexCount, thumbnailMeshFilter);
-                }
-
-                thumbnailMeshFilter.hideFlags = HideFlags.DontSave | HideFlags.HideInInspector;
-                thumbnailMeshRenderer.hideFlags = HideFlags.DontSave | HideFlags.HideInInspector;
-                thumbnailPCRenderer.hideFlags = HideFlags.DontSave | HideFlags.HideInInspector;
-
-                if (thumbnail.geometryType == SequenceConfiguration.GeometryType.point)
-                    thumbnailMeshRenderer.material = pointcloudMaterial;
-                else
-                    thumbnailMeshRenderer.material = meshMaterial;
-
-                ShowFrameData(thumbnail, thumbnailMeshFilter, gameObject, thumbnailPCRenderer, thumbnailReader.sequenceConfig);
-            }
-        }
-
-        /// <summary>
-        /// Removes the shown Thumbnail
-        /// </summary>
-        public void ClearEditorThumbnail()
-        {
-            if (thumbnailReader != null)
-            {
-                thumbnailReader.DisposeFrameBuffer(false);
-                thumbnailReader = null;
-            }
-
-            if(thumbnailPCRenderer != null)
-                thumbnailPCRenderer.UnsubscribeFromEditorUpdate();
         }
 
         /// <summary>
@@ -401,6 +343,65 @@ namespace BuildingVolumes.Streaming
                 thumbnailPCRenderer.ChangePointSize(size);
         }
 
+        /// <summary>
+        /// Loads and shows a thumbnail of the clip that was just opened. Only shown in the editor
+        /// </summary>
+        /// <param name="pathToSequence"></param>
+        public void LoadEditorThumbnail(string pathToSequence)
+        {
+            ClearEditorThumbnail();
+
+            if (Directory.Exists(pathToSequence))
+            {
+                thumbnailReader = new BufferedGeometryReader(pathToSequence, 1);
+                Frame thumbnail = thumbnailReader.frameBuffer[0];
+
+                thumbnailReader.LoadFrameImmediate(thumbnail, 0);
+
+                thumbnailMeshRenderer = GetComponent<MeshRenderer>();
+                thumbnailMeshFilter = GetComponent<MeshFilter>();
+                thumbnailPCRenderer = GetComponent<PointcloudRenderer>();
+
+                if (!thumbnailMeshFilter)
+                    thumbnailMeshFilter = gameObject.AddComponent<MeshFilter>();
+                if (!thumbnailMeshRenderer)
+                    thumbnailMeshRenderer = gameObject.AddComponent<MeshRenderer>();
+                if (!thumbnailPCRenderer)
+                    thumbnailPCRenderer = gameObject.AddComponent<PointcloudRenderer>();
+
+                thumbnailMeshFilter.hideFlags = HideFlags.DontSave | HideFlags.HideInInspector;
+                thumbnailMeshRenderer.hideFlags = HideFlags.DontSave | HideFlags.HideInInspector;
+                thumbnailPCRenderer.hideFlags = HideFlags.DontSave | HideFlags.HideInInspector;
+
+                if (thumbnail.geometryType == SequenceConfiguration.GeometryType.point)
+                    thumbnailMeshRenderer.material = pointcloudMaterial;
+                else
+                    thumbnailMeshRenderer.material = meshMaterial;
+
+                thumbnailPCRenderer.SetupPointcloudRenderer(thumbnailReader.sequenceConfig.maxVertexCount, thumbnailMeshFilter);
+                ShowFrameData(thumbnail, thumbnailMeshFilter, gameObject, thumbnailPCRenderer, thumbnailReader.sequenceConfig);
+
+                //Before a domain reload destroys the values set in this script, we need to free the memory
+                AssemblyReloadEvents.beforeAssemblyReload += ClearEditorThumbnail;
+            }
+        }
+
+
+        /// <summary>
+        /// Removes the shown Thumbnail
+        /// </summary>
+        public void ClearEditorThumbnail()
+        {
+            if (thumbnailReader != null)
+            {
+                thumbnailReader.DisposeFrameBuffer(false);
+                thumbnailReader = null;
+            }
+
+            if (thumbnailPCRenderer != null)
+                thumbnailPCRenderer.EndEditorLife();
+        }
+
 
         void CleanupSequence()
         {
@@ -435,6 +436,71 @@ namespace BuildingVolumes.Streaming
         {
             if (pointcloudMaterial == null && meshMaterial == null)
                 SetupMaterials();
+        }
+    }
+
+    //Thumbnails are dynamically loaded each time the scene is opened, so that they 
+    //won't need to be saved in the scene, which might make the scene file huge
+    //This class helps to detect when a thumbnail load is neccessary
+    [InitializeOnLoad]
+    public class ThumbnailLoadHelper
+    {
+        static bool LoadThumbnailAfterEditorOpen = false;
+
+        static ThumbnailLoadHelper()
+        {
+            EditorSceneManager.sceneOpened += LoadThumbnailOnSceneOpen;
+            EditorSceneManager.sceneClosing += ClearThumbnailOnSceneClosed;
+
+            //Trick to load thumbnail the first time, and only the first time, after Unity has started.
+            //We subscribe to EditorApplication.update instead of calling it directly, so that the 
+            //LoadThumbDelayed function only gets called after everything has been loaded
+            if (!SessionState.GetBool("GSSThumbLoadedFirstTime", false))
+            {
+                EditorApplication.update += LoadThumbDelayed;
+                LoadThumbnailAfterEditorOpen = true;
+            }
+
+            //After every recompile, the scripts get reset
+            //So we need to re-load the thumbnail after every recompile
+            LoadThumbnailOnSceneOpen(new UnityEngine.SceneManagement.Scene(), OpenSceneMode.Single);
+        }
+
+        static void LoadThumbnailOnSceneOpen(UnityEngine.SceneManagement.Scene scene1, OpenSceneMode mode)
+        {
+            GeometrySequencePlayer[] players = GameObject.FindObjectsOfType<GeometrySequencePlayer>();
+
+            foreach (GeometrySequencePlayer player in players)
+            {
+                if (player.GetAbsoluteSequencePath() != null)
+                {
+                    if (player.GetAbsoluteSequencePath().Length > 0)
+                    {
+                        player.ShowThumbnail(player.GetAbsoluteSequencePath());
+                    }
+                }
+            }
+        }
+
+        static void ClearThumbnailOnSceneClosed(UnityEngine.SceneManagement.Scene scene1, bool removingScene)
+        {
+            GeometrySequencePlayer[] players = GameObject.FindObjectsOfType<GeometrySequencePlayer>();
+
+            foreach (GeometrySequencePlayer player in players)
+            {
+                player.ClearThumbnail();
+            }
+        }
+
+        static void LoadThumbDelayed()
+        {
+            if (LoadThumbnailAfterEditorOpen)
+            {
+                LoadThumbnailAfterEditorOpen = false;
+                EditorApplication.update -= LoadThumbDelayed;
+                LoadThumbnailOnSceneOpen(new UnityEngine.SceneManagement.Scene(), OpenSceneMode.Single);
+                SessionState.SetBool("GSSThumbLoadedFirstTime", true);
+            }
         }
     }
 }

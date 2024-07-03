@@ -149,9 +149,8 @@ namespace BuildingVolumes.Streaming
             pointSourceBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Raw, maxPointCount * 4 * 4, 4 * 4);
 
 #if UNITY_EDITOR
-            SubscribeToEditorUpdate();
+            StartEditorLife();
 #endif
-
             return maxPointCount;
         }
 
@@ -185,26 +184,21 @@ namespace BuildingVolumes.Streaming
 
         #region RenderInEditor
 
-        public void SubscribeToEditorUpdate()
+        public void StartEditorLife()
         {
             SceneView.beforeSceneGui += RenderInEditor;
         }
 
         public void RenderInEditor(SceneView view)
         {
-            //Sometimes this script is still subscriped even when it doesn't exist anymore
-            if (this == null)
-            {
-                UnsubscribeFromEditorUpdate();
-                return;
-            }
-
             Render();
         }
 
-        public void UnsubscribeFromEditorUpdate()
+        public void EndEditorLife()
         {
             SceneView.beforeSceneGui -= RenderInEditor;
+            ReleaseLargeBuffers();
+            ReleaseSmallBuffers();
         }
 
         #endregion
