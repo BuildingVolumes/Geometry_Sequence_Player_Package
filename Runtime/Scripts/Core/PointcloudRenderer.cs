@@ -101,7 +101,7 @@ namespace BuildingVolumes.Streaming
             computeShader.Dispatch(0, groupSize, 1, 1);
         }
 
-        public void ChangePointSize(float size)
+        public void SetPointSize(float size)
         {
             pointScale = size;
             computeShader.SetFloat(pointScaleID, pointScale);
@@ -149,7 +149,8 @@ namespace BuildingVolumes.Streaming
             pointSourceBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Raw, maxPointCount * 4 * 4, 4 * 4);
 
 #if UNITY_EDITOR
-            StartEditorLife();
+            if (!Application.isPlaying)
+                StartEditorLife();
 #endif
             return maxPointCount;
         }
@@ -187,6 +188,7 @@ namespace BuildingVolumes.Streaming
         public void StartEditorLife()
         {
             SceneView.beforeSceneGui += RenderInEditor;
+            Debug.Log("Subscribed to update");
         }
 
         public void RenderInEditor(SceneView view)
@@ -199,6 +201,7 @@ namespace BuildingVolumes.Streaming
             SceneView.beforeSceneGui -= RenderInEditor;
             ReleaseLargeBuffers();
             ReleaseSmallBuffers();
+            Debug.Log("Unsubscribed from update");
         }
 
         #endregion

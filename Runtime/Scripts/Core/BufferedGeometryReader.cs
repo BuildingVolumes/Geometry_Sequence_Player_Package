@@ -65,9 +65,8 @@ namespace BuildingVolumes.Streaming
         /// Create a new buffered reader. You must include a path to a valid folder
         /// </summary>
         /// <param name="folder">A path to a folder containing .ply geometry files and optionally .dds texture files</param>
-        public BufferedGeometryReader(string folder, int frameBufferSize)
+        public BufferedGeometryReader()
         {
-            SetupReader(folder, frameBufferSize);
         }
 
         ~BufferedGeometryReader()
@@ -250,15 +249,13 @@ namespace BuildingVolumes.Streaming
                 frame.meshArray[0].SetIndexBufferParams(maxIndiceCount, IndexFormat.UInt32);
             }
 
-            for (int i = 0; i < frameBuffer.Length; i++)
-            {
-                frame.textureMode = textureMode;
+            frame.textureMode = textureMode;
 
-                if (textureMode == SequenceConfiguration.TextureMode.PerFrame)
-                    frame.textureBufferRaw = new NativeArray<byte>(maxTextureSize, Allocator.Persistent);
-                else
-                    frame.textureBufferRaw = new NativeArray<byte>(1, Allocator.Persistent);
-            }
+            if (textureMode == SequenceConfiguration.TextureMode.PerFrame)
+                frame.textureBufferRaw = new NativeArray<byte>(maxTextureSize, Allocator.Persistent);
+            else
+                frame.textureBufferRaw = new NativeArray<byte>(1, Allocator.Persistent);
+
         }
 
 

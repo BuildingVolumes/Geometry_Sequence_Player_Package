@@ -76,7 +76,9 @@ namespace BuildingVolumes.Streaming
 
             this.pathToSequence = absolutePathToSequence;
 
-            bufferedReader = new BufferedGeometryReader(pathToSequence, bufferSize);
+            bufferedReader = new BufferedGeometryReader();
+            if (!bufferedReader.SetupReader(pathToSequence, bufferSize))
+                return false;
 
             bool meshRes = SetupMesh();
             bool textureRes = SetupTexture();
@@ -338,9 +340,9 @@ namespace BuildingVolumes.Streaming
             pointSize = size;
 
             if(pointcloudRenderer != null)
-                pointcloudRenderer.ChangePointSize(size);
+                pointcloudRenderer.SetPointSize(size);
             if(thumbnailPCRenderer != null)
-                thumbnailPCRenderer.ChangePointSize(size);
+                thumbnailPCRenderer.SetPointSize(size);
         }
 
         /// <summary>
@@ -353,7 +355,13 @@ namespace BuildingVolumes.Streaming
 
             if (Directory.Exists(pathToSequence))
             {
-                thumbnailReader = new BufferedGeometryReader(pathToSequence, 1);
+                thumbnailReader = new BufferedGeometryReader();
+                if(!thumbnailReader.SetupReader(pathToSequence, 1))
+                {
+                    Debug.LogWarning("Could not load thumbnail for sequence: " +  pathToSequence);
+                    return;
+                }
+
                 Frame thumbnail = thumbnailReader.frameBuffer[0];
 
                 thumbnailReader.LoadFrameImmediate(thumbnail, 0);
@@ -379,6 +387,7 @@ namespace BuildingVolumes.Streaming
                     thumbnailMeshRenderer.material = meshMaterial;
 
                 thumbnailPCRenderer.SetupPointcloudRenderer(thumbnailReader.sequenceConfig.maxVertexCount, thumbnailMeshFilter);
+                thumbnailPCRenderer.SetPointSize(pointSize);
                 ShowFrameData(thumbnail, thumbnailMeshFilter, gameObject, thumbnailPCRenderer, thumbnailReader.sequenceConfig);
 
                 //Before a domain reload destroys the values set in this script, we need to free the memory
@@ -439,6 +448,9 @@ namespace BuildingVolumes.Streaming
         }
     }
 
+
+#if UNITY_EDITOR
+
     //Thumbnails are dynamically loaded each time the scene is opened, so that they 
     //won't need to be saved in the scene, which might make the scene file huge
     //This class helps to detect when a thumbnail load is neccessary
@@ -451,6 +463,7 @@ namespace BuildingVolumes.Streaming
         {
             EditorSceneManager.sceneOpened += LoadThumbnailOnSceneOpen;
             EditorSceneManager.sceneClosing += ClearThumbnailOnSceneClosed;
+            EditorApplication.playModeStateChanged += LoadThumbnailOnExitPlaymode;
 
             //Trick to load thumbnail the first time, and only the first time, after Unity has started.
             //We subscribe to EditorApplication.update instead of calling it directly, so that the 
@@ -463,11 +476,19 @@ namespace BuildingVolumes.Streaming
 
             //After every recompile, the scripts get reset
             //So we need to re-load the thumbnail after every recompile
-            LoadThumbnailOnSceneOpen(new UnityEngine.SceneManagement.Scene(), OpenSceneMode.Single);
+            LoadThumbnail();
         }
 
         static void LoadThumbnailOnSceneOpen(UnityEngine.SceneManagement.Scene scene1, OpenSceneMode mode)
         {
+            LoadThumbnail();
+        }
+
+        static void LoadThumbnail()
+        {
+            if (EditorApplication.isPlayingOrWillChangePlaymode)
+                return;
+
             GeometrySequencePlayer[] players = GameObject.FindObjectsOfType<GeometrySequencePlayer>();
 
             foreach (GeometrySequencePlayer player in players)
@@ -483,6 +504,20 @@ namespace BuildingVolumes.Streaming
         }
 
         static void ClearThumbnailOnSceneClosed(UnityEngine.SceneManagement.Scene scene1, bool removingScene)
+        {
+            if(EditorApplication.isPlaying) 
+                return;
+
+            ClearThumbnail();
+        }
+
+        static void LoadThumbnailOnExitPlaymode(PlayModeStateChange change)
+        {
+            if (change == PlayModeStateChange.EnteredEditMode)
+                LoadThumbnail();
+        }
+
+        static void ClearThumbnail()
         {
             GeometrySequencePlayer[] players = GameObject.FindObjectsOfType<GeometrySequencePlayer>();
 
@@ -503,4 +538,7 @@ namespace BuildingVolumes.Streaming
             }
         }
     }
+
+#endif
+
 }

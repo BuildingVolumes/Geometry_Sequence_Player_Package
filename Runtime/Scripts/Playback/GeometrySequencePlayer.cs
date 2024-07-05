@@ -37,7 +37,8 @@ namespace BuildingVolumes.Streaming
         void Start()
         {
             SetupGeometryStream();
-            OpenSequence(relativePath, pathRelation, playbackFPS, playAtStart);
+            if (!OpenSequence(relativePath, pathRelation, playbackFPS, playAtStart))
+                Debug.LogError("Could not open sequence! Please check the path and files!");
         }
 
         public void SetupGeometryStream()

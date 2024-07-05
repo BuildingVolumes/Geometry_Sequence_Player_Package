@@ -54,6 +54,12 @@ namespace BuildingVolumes.Streaming
                 return null;
             }
 
+            if(configuration.headerSizes.Count == 0 || configuration.verticeCounts.Count == 0)
+            {
+                Debug.LogError("Metadata file invalid!");
+                return null;
+            }
+
             return configuration;
         }
 
