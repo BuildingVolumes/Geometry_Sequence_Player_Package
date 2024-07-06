@@ -12,6 +12,7 @@ namespace BuildingVolumes.Streaming
 
         public GeometryType geometryType;
         public TextureMode textureMode;
+        public bool hasUVs;
         public int maxVertexCount;
         public int maxIndiceCount;
         public List<float> maxBounds;

@@ -10,6 +10,7 @@ using System.Text;
 using System.Linq;
 using System.Text.RegularExpressions;
 using static BuildingVolumes.Streaming.SequenceConfiguration;
+using System.ComponentModel;
 
 
 namespace BuildingVolumes.Streaming
@@ -17,16 +18,20 @@ namespace BuildingVolumes.Streaming
 
     public class Frame
     {
-        public Mesh.MeshDataArray meshArray; //When the data is a mesh
-        public NativeArray<byte> vertexBufferRaw; //When the data is a pointcloud
+        public NativeArray<byte> vertexBufferRaw; 
+        public NativeArray<int> indiceBufferRaw;
         public NativeArray<byte> textureBufferRaw;
 
         public SequenceConfiguration.GeometryType geometryType;
         public SequenceConfiguration.TextureMode textureMode;
+        public bool hasUVs;
 
         public int headerSize;
         public int vertexCount;
         public int indiceCount;
+
+        public int maxVertexCount;
+        public int maxIndiceCount;
 
         public ReadGeometryJob geoJob;
         public JobHandle geoJobHandle;
@@ -114,7 +119,7 @@ namespace BuildingVolumes.Streaming
             for (int i = 0; i < frameBuffer.Length; i++)
             {
                 frameBuffer[i] = new Frame();
-                AllocateFrame(frameBuffer[i], sequenceConfig.geometryType, sequenceConfig.textureMode, sequenceConfig.maxVertexCount, sequenceConfig.maxIndiceCount, sequenceConfig.textureSize);
+                AllocateFrame(frameBuffer[i], sequenceConfig);
                 frameBuffer[i].playbackIndex = -1;
             }
 
@@ -169,11 +174,14 @@ namespace BuildingVolumes.Streaming
                     if (newPlaybackIndex < totalFrames)
                     {
                         Frame newFrame = frameBuffer[i];
+                        newFrame.geometryType = sequenceConfig.geometryType;
+                        newFrame.textureMode = sequenceConfig.textureMode;
                         newFrame.playbackIndex = newPlaybackIndex;
-
                         newFrame.headerSize = sequenceConfig.headerSizes[newPlaybackIndex];
                         newFrame.vertexCount = sequenceConfig.verticeCounts[newPlaybackIndex];
+                        newFrame.maxVertexCount = sequenceConfig.maxVertexCount;
                         newFrame.indiceCount = sequenceConfig.indiceCounts[newPlaybackIndex];
+                        newFrame.maxIndiceCount = sequenceConfig.maxIndiceCount;
 
                         newFrame = ScheduleGeometryReadJob(newFrame, plyFilePaths[newPlaybackIndex]);
 
@@ -206,11 +214,12 @@ namespace BuildingVolumes.Streaming
 
         }
 
-        void AllocateFrame(Frame frame, GeometryType geoType, SequenceConfiguration.TextureMode textureMode, int maxVertexCount, int maxIndiceCount, int maxTextureSize)
+        void AllocateFrame(Frame frame, SequenceConfiguration config)
         {
             VertexAttributeDescriptor[] layout = new VertexAttributeDescriptor[0];
 
-            switch (sequenceConfig.geometryType)
+            frame.geometryType = config.geometryType;
+            switch (config.geometryType)
             {
                 case GeometryType.point:
                     layout = new[] {
@@ -231,31 +240,27 @@ namespace BuildingVolumes.Streaming
                     break;
             }
 
-            //Allocate every frame with the highest amount of vertices being used in this sequence. 
+            //Allocate every frame with the highest amount of vertices and indices being used in this sequence. 
             //This way, we can re-use the meshArrays, instead of re-allocating them each frame
-            frame.geometryType = geoType;
-            frame.meshArray = Mesh.AllocateWritableMeshData(1);
-
-            if (geoType == GeometryType.point)
+            if (config.geometryType == GeometryType.point)
             {
-                frame.vertexBufferRaw = new NativeArray<byte>(maxVertexCount * 4 * 4, Allocator.Persistent);
+                frame.vertexBufferRaw = new NativeArray<byte>(config.maxVertexCount * 4 * 4, Allocator.Persistent);
+                frame.indiceBufferRaw = new NativeArray<int>(1, Allocator.Persistent);
             }
 
             else
             {
-                //We still need to allocate the Array, even if it's not used
-                frame.vertexBufferRaw = new NativeArray<byte>(1, Allocator.Persistent);
-                frame.meshArray[0].SetVertexBufferParams(maxVertexCount, layout);
-                frame.meshArray[0].SetIndexBufferParams(maxIndiceCount, IndexFormat.UInt32);
+                int vertexSizeBytes = sequenceConfig.hasUVs ? config.maxVertexCount * 5 * 4 : config.maxVertexCount * 3 * 4;
+                frame.vertexBufferRaw = new NativeArray<byte>(vertexSizeBytes, Allocator.Persistent);
+                frame.indiceBufferRaw = new NativeArray<int>(config.maxIndiceCount, Allocator.Persistent);
             }
 
-            frame.textureMode = textureMode;
+            frame.textureMode = config.textureMode;
 
-            if (textureMode == SequenceConfiguration.TextureMode.PerFrame)
-                frame.textureBufferRaw = new NativeArray<byte>(maxTextureSize, Allocator.Persistent);
+            if (config.textureMode == SequenceConfiguration.TextureMode.PerFrame)
+                frame.textureBufferRaw = new NativeArray<byte>(config.textureSize, Allocator.Persistent);
             else
                 frame.textureBufferRaw = new NativeArray<byte>(1, Allocator.Persistent);
-
         }
 
 
@@ -391,11 +396,14 @@ namespace BuildingVolumes.Streaming
         {
             frame.geoJob = new ReadGeometryJob();
             frame.geoJob.pathCharArray = new NativeArray<byte>(Encoding.UTF8.GetBytes(plyPath), Allocator.Persistent);
+            frame.geoJob.geoType = frame.geometryType;
+            frame.geoJob.hasUVs = frame.hasUVs;
             frame.geoJob.headerSize = frame.headerSize;
             frame.geoJob.vertexCount = frame.vertexCount;
             frame.geoJob.indiceCount = frame.indiceCount;
+            frame.geoJob.maxIndiceCount = frame.maxIndiceCount;
             frame.geoJob.vertexBuffer = frame.vertexBufferRaw;
-            frame.geoJob.mesh = frame.meshArray[0];
+            frame.geoJob.indiceBuffer = frame.indiceBufferRaw;
             frame.geoJobHandle = frame.geoJob.Schedule(frame.geoJobHandle);
 
             return frame;
@@ -444,7 +452,7 @@ namespace BuildingVolumes.Streaming
                 {
                     frameBuffer[i].geoJobHandle.Complete();
                     frameBuffer[i].vertexBufferRaw.Dispose();
-                    frameBuffer[i].meshArray.Dispose();
+                    frameBuffer[i].indiceBufferRaw.Dispose();
 
                     frameBuffer[i].textureJobHandle.Complete();
                     frameBuffer[i].textureBufferRaw.Dispose();
@@ -452,18 +460,19 @@ namespace BuildingVolumes.Streaming
             }
 
             frameBuffer = null;
-
         }
     }
 
     public struct ReadGeometryJob : IJob
     {
         public NativeArray<byte> vertexBuffer;
-        public Mesh.MeshData mesh;
+        public NativeArray<int> indiceBuffer;
+        public bool hasUVs;
         public bool readFinished;
         public int headerSize;
         public int vertexCount;
         public int indiceCount;
+        public int maxIndiceCount;
         public GeometryType geoType;
 
         [DeallocateOnJobCompletion]
@@ -493,28 +502,25 @@ namespace BuildingVolumes.Streaming
 
             else
             {
-                int vertexBufferSize;
-
-                if (geoType == GeometryType.texturedMesh)
-                    vertexBufferSize = vertexCount * 5;
-                else
-                    vertexBufferSize = vertexCount * 3;
-
-                NativeArray<byte>.Copy(byteBuffer, mesh.GetVertexData<byte>(), vertexCount * vertexBufferSize * 4);
-
-                int[] indicesRaw = new int[indiceCount];
-                int facePositionInBuffer = vertexBufferSize * sizeof(float);
-                int sizeOfIndexLine = sizeof(byte) + sizeof(int) * 3;
-
-                //Reading the index is a bit more tricky because each index line contains the number of indices in that line, which we dont want to include
-                for (int i = 0; i < indiceCount / 3; i++)
+                float[] verts = new float[vertexCount];
+                for (int i = 0; i < vertexCount; i++)
                 {
-                    Buffer.BlockCopy(byteBuffer, facePositionInBuffer + sizeOfIndexLine * i + sizeof(byte), indicesRaw, i * 3 * sizeof(int), 3 * sizeof(int));
+                    byte[] vert = new byte[4];
+                    Buffer.BlockCopy(byteBuffer, i * 4, vert, 0, 4);
+                    verts[i] = BitConverter.ToSingle(vert, 0);
                 }
 
-                NativeArray<int>.Copy(indicesRaw, mesh.GetIndexData<int>());
-                mesh.subMeshCount = 1;
-                mesh.SetSubMesh(0, new SubMeshDescriptor(0, indicesRaw.Length, MeshTopology.Triangles));
+                int vertexBufferSize = hasUVs ? vertexCount * 5 * 4 : vertexCount * 3 * 4;
+                NativeArray<byte>.Copy(byteBuffer, vertexBuffer, vertexBufferSize);
+                //Reading the index is a bit more tricky because each index line contains the number of indices in that line, which we dont want to include
+                int[] indicesRaw = new int[indiceCount];
+                int sizeOfIndexLine = sizeof(byte) + sizeof(int) * 3;
+                for (int i = 0; i < indiceCount / 3; i++)
+                {
+                    Buffer.BlockCopy(byteBuffer, vertexBufferSize + sizeOfIndexLine * i + sizeof(byte), indicesRaw, i * 3 * sizeof(int), 3 * sizeof(int));
+                }
+
+                NativeArray<int>.Copy(indicesRaw, indiceBuffer, indicesRaw.Length);
             }
 
             readFinished = true;

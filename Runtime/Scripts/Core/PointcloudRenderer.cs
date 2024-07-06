@@ -141,7 +141,6 @@ namespace BuildingVolumes.Streaming
             outputMesh.SetIndexBufferParams(maxPointCount * 6, IndexFormat.UInt32);
 
             outputMesh.SetSubMesh(0, new SubMeshDescriptor(0, maxPointCount * 6), MeshUpdateFlags.DontRecalculateBounds);
-            outputMesh.bounds = new Bounds(Vector3.zero, Vector3.one * 10);
 
             vertexBuffer = outputMesh.GetVertexBuffer(0);
             indexBuffer = outputMesh.GetIndexBuffer();

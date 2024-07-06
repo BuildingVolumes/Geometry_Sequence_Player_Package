@@ -3,6 +3,10 @@ using System.IO;
 using Unity.Collections;
 using Unity.Jobs.LowLevel.Unsafe;
 using UnityEditor;
+using UnityEngine.Rendering;
+using System.Linq.Expressions;
+
+
 
 #if UNITY_EDITOR
 using UnityEditor.SceneManagement;
@@ -76,11 +80,27 @@ namespace BuildingVolumes.Streaming
 
             this.pathToSequence = absolutePathToSequence;
 
+            string[] paths;
+
+            try { paths = Directory.GetFiles(pathToSequence, "*.ply"); }
+
+            catch (System.Exception e)
+            {
+                UnityEngine.Debug.LogError("Error getting sequence files, folder is probably empty: " + pathToSequence + " Error: " + e.Message);
+                return false;
+            }
+
+            if (paths.Length == 0)
+            {
+                UnityEngine.Debug.LogError("Couldn't find .ply files in sequence directory: " + pathToSequence);
+                return false;
+            }
+
             bufferedReader = new BufferedGeometryReader();
             if (!bufferedReader.SetupReader(pathToSequence, bufferSize))
                 return false;
 
-            bool meshRes = SetupMesh();
+            bool meshRes = CreateStreamObject();
             bool textureRes = SetupTexture();
             readerIsReady = meshRes && textureRes;
 
@@ -136,8 +156,85 @@ namespace BuildingVolumes.Streaming
 
         }
 
+        /// <summary>
+        /// Display mesh and texture data from a frame buffer
+        /// </summary>
+        /// <param name="frame"></param>
+        public void ShowFrameData(Frame frame, MeshFilter meshFilter, GameObject streamObject, PointcloudRenderer pcRenderer, SequenceConfiguration config)
+        {
+            ShowGeometryData(frame, meshFilter, streamObject, pcRenderer, config);
 
-        bool SetupMesh()
+            //if (frame.ddsHeaderInfo.size > 0)
+            //{
+            //    ShowTextureData(frame, meshrenderer);
+            //}
+        }
+
+
+        /// <summary>
+        /// Reads mesh data from a native array buffer and disposes of it right after 
+        /// </summary>
+        /// <param name="frame"></param>
+        void ShowGeometryData(Frame frame, MeshFilter meshFilter, GameObject streamObject, PointcloudRenderer pcRenderer, SequenceConfiguration config)
+        {
+            frame.geoJobHandle.Complete();
+
+            Vector3 offset;
+            if (streamObject == null)
+                offset = transform.position;
+            else
+                offset = streamObject.transform.position;
+
+            Bounds bounds = config.GetBounds();
+            meshFilter.sharedMesh.bounds = new Bounds(bounds.center + offset, bounds.size);
+
+            if (config.geometryType == SequenceConfiguration.GeometryType.point)
+            {
+                pcRenderer.SetPointcloudData(frame.vertexBufferRaw, frame.vertexCount, meshFilter.transform);
+            }
+
+            else
+            {
+                VertexAttributeDescriptor vp = new VertexAttributeDescriptor(VertexAttribute.Position, VertexAttributeFormat.Float32, 3);
+                VertexAttributeDescriptor vt = new VertexAttributeDescriptor(VertexAttribute.TexCoord0, VertexAttributeFormat.Float32, 2);
+
+                if (config.hasUVs)
+                    meshFilter.sharedMesh.SetVertexBufferParams(config.maxVertexCount, vp, vt);
+                else
+                    meshFilter.sharedMesh.SetVertexBufferParams(config.maxVertexCount, vp);
+
+                meshFilter.sharedMesh.SetIndexBufferParams(config.maxIndiceCount, IndexFormat.UInt32);
+                meshFilter.sharedMesh.SetVertexBufferData<byte>(frame.vertexBufferRaw, 0, 0, frame.vertexBufferRaw.Length);
+                meshFilter.sharedMesh.SetIndexBufferData<int>(frame.indiceBufferRaw, 0, 0, frame.indiceCount);
+                meshFilter.sharedMesh.SetSubMesh(0, new SubMeshDescriptor(0, frame.indiceCount), MeshUpdateFlags.DontRecalculateBounds);
+                meshFilter.sharedMesh.RecalculateNormals();
+            }
+        }
+
+        /// <summary>
+        /// Reads texture data from a frame buffer. Doesn't dispose of the data, you need to do that manually!
+        /// </summary>
+        /// <param name="frame"></param>
+        void ShowTextureData(Frame frame, MeshRenderer meshRenderer)
+        {
+            frame.textureJobHandle.Complete();
+
+            NativeArray<byte> textureRaw = texture.GetRawTextureData<byte>();
+
+            //if (textureRaw.Length != frame.textureBufferRaw.Length)
+            //{
+            //    texture = new Texture2D(textureHeader.width, textureHeader.height, TextureFormat.DXT1, false);
+            //    textureRaw = texture.GetRawTextureData<byte>();
+            //}
+
+            textureRaw.CopyFrom(frame.textureBufferRaw);
+            texture.Apply();
+
+            if (meshRenderer.material.GetTexture("_MainTex") != texture)
+                meshRenderer.material.SetTexture("_MainTex", texture);
+        }
+
+        bool CreateStreamObject()
         {
             streamedMeshObject = new GameObject("StreamedMesh");
 
@@ -150,57 +247,47 @@ namespace BuildingVolumes.Streaming
             streamedMeshObject.transform.localRotation = Quaternion.identity;
             streamedMeshObject.transform.localScale = Vector3.one;
 
-            string[] paths;
+            return ConfigureRenderObject(streamedMeshObject, bufferedReader.sequenceConfig, false, out streamedMeshRenderer, out streamedMeshFilter, out pointcloudRenderer);
+        }
 
-            try { paths = Directory.GetFiles(pathToSequence, "*.ply"); }
+        bool ConfigureRenderObject(GameObject renderObject, SequenceConfiguration config, bool hidden, out MeshRenderer renderer, out MeshFilter meshfilter, out PointcloudRenderer pcRenderer)
+        {
+            bool pc = config.geometryType == SequenceConfiguration.GeometryType.point;
 
-            catch (System.Exception e)
+            renderer = renderObject.GetComponent<MeshRenderer>();
+            meshfilter = renderObject.GetComponent<MeshFilter>();
+            pcRenderer = renderObject.GetComponent<PointcloudRenderer>();
+
+            if (!meshfilter)
+                meshfilter = renderObject.AddComponent<MeshFilter>();
+            if(!meshfilter.sharedMesh)
+                meshfilter.sharedMesh = new Mesh();
+            if (!renderer)
+                renderer = renderObject.AddComponent<MeshRenderer>();
+            if (!pcRenderer && pc)
+                pcRenderer = renderObject.AddComponent<PointcloudRenderer>();
+
+            if (hidden)
             {
-                UnityEngine.Debug.LogError("Error getting sequence files, folder is probably empty: " + pathToSequence + " Error: " + e.Message);
+                meshfilter.hideFlags = HideFlags.DontSave | HideFlags.HideInInspector;
+                renderer.hideFlags = HideFlags.DontSave | HideFlags.HideInInspector;
+                if (pc)
+                    pcRenderer.hideFlags = HideFlags.DontSave | HideFlags.HideInInspector;
+            }
+
+            if (!CheckMaterials())
                 return false;
-            }
 
-            if (paths.Length == 0)
-            {
-                UnityEngine.Debug.LogError("Couldn't find .ply files in sequence directory: " + pathToSequence);
-                return false;
-            }
-
-            if (pointcloudMaterial == null || meshMaterial == null)
-            {
-                UnityEngine.Debug.LogError("Couldn't load Materials");
-                return false;
-            }
-
-            streamedMeshFilter = streamedMeshObject.AddComponent<MeshFilter>();
-
-            streamedMeshFilter.sharedMesh = new Mesh();
-            streamedMeshRenderer = streamedMeshObject.AddComponent<MeshRenderer>();
-
-            if (bufferedReader.sequenceConfig.geometryType == SequenceConfiguration.GeometryType.point)
-            {
-                if (pointcloudMaterial == null)
-                {
-                    UnityEngine.Debug.LogError("Pointcloud material not assigned in GeometrySequenceStream Component, please assign a material!");
-                    return false;
-                }
-
-                streamedMeshRenderer.material = new Material(pointcloudMaterial);
-                pointcloudRenderer = streamedMeshObject.AddComponent<PointcloudRenderer>();
-                pointcloudRenderer.SetupPointcloudRenderer(bufferedReader.sequenceConfig.maxVertexCount, streamedMeshFilter);
-            }
-
+            if (pc)
+                renderer.material = pointcloudMaterial; //new Material?
             else
-            {
-                if (meshMaterial == null)
-                {
-                    UnityEngine.Debug.LogError("Mesh material not assigned in GeometrySequenceStream Component, please assign a material!");
-                    return false;
-                }
+                renderer.material = meshMaterial;
 
-                streamedMeshRenderer.material = new Material(meshMaterial);
-                streamedMeshRenderer.material.SetTexture("_MainTex", texture);
-            }
+            if (config.textureMode != SequenceConfiguration.TextureMode.None)
+                renderer.material.SetTexture("_MainTex", texture);
+
+            if (pc)
+                pcRenderer.SetupPointcloudRenderer(config.maxVertexCount, meshfilter);
 
             return true;
         }
@@ -250,82 +337,7 @@ namespace BuildingVolumes.Streaming
             return true;
         }
 
-
-
-        /// <summary>
-        /// Display mesh and texture data from a frame buffer
-        /// </summary>
-        /// <param name="frame"></param>
-        public void ShowFrameData(Frame frame, MeshFilter meshFilter, GameObject streamObject, PointcloudRenderer pcRenderer, SequenceConfiguration config)
-        {
-            ShowGeometryData(frame, meshFilter, streamObject, pcRenderer, config);
-
-            //if (frame.ddsHeaderInfo.size > 0)
-            //{
-            //    ShowTextureData(frame, meshrenderer);
-            //}
-        }
-
-
-        /// <summary>
-        /// Reads mesh data from a native array buffer and disposes of it right after 
-        /// </summary>
-        /// <param name="frame"></param>
-        void ShowGeometryData(Frame frame, MeshFilter meshFilter, GameObject streamObject, PointcloudRenderer pcRenderer, SequenceConfiguration config)
-        {
-            frame.geoJobHandle.Complete();
-
-            if (meshFilter.sharedMesh == null)
-            {
-                meshFilter.sharedMesh = new Mesh();
-            }
-
-            Vector3 offset;
-            if (streamObject == null)
-                offset = transform.position;
-            else
-                offset = streamObject.transform.position;
-
-            Bounds bounds = config.GetBounds();
-            meshFilter.sharedMesh.bounds = new Bounds(bounds.center + offset, bounds.size);
-
-            if (config.geometryType == SequenceConfiguration.GeometryType.point)
-            {
-                pcRenderer.SetPointcloudData(frame.vertexBufferRaw, frame.vertexCount, meshFilter.transform);
-            }
-
-            else
-            {
-                Mesh.ApplyAndDisposeWritableMeshData(frame.meshArray, meshFilter.sharedMesh);
-                meshFilter.sharedMesh.RecalculateNormals();
-            }
-
-        }
-
-        /// <summary>
-        /// Reads texture data from a frame buffer. Doesn't dispose of the data, you need to do that manually!
-        /// </summary>
-        /// <param name="frame"></param>
-        void ShowTextureData(Frame frame, MeshRenderer meshRenderer)
-        {
-            frame.textureJobHandle.Complete();
-
-            NativeArray<byte> textureRaw = texture.GetRawTextureData<byte>();
-
-            //if (textureRaw.Length != frame.textureBufferRaw.Length)
-            //{
-            //    texture = new Texture2D(textureHeader.width, textureHeader.height, TextureFormat.DXT1, false);
-            //    textureRaw = texture.GetRawTextureData<byte>();
-            //}
-
-            textureRaw.CopyFrom(frame.textureBufferRaw);
-            texture.Apply();
-
-            if (meshRenderer.material.GetTexture("_MainTex") != texture)
-                meshRenderer.material.SetTexture("_MainTex", texture);
-        }
-
-        public void SetupMaterials()
+        public bool SetupMaterials()
         {
             //Fill up material slots with default materials
             if (pointcloudMaterial == null)
@@ -333,15 +345,34 @@ namespace BuildingVolumes.Streaming
 
             if (meshMaterial == null)
                 meshMaterial = Resources.Load("GS_MeshMaterial") as Material;
+
+            return CheckMaterials();
+        }
+
+        public bool CheckMaterials()
+        {
+            if (meshMaterial == null)
+            {
+                UnityEngine.Debug.LogError("Mesh default material could not be loaded!");
+                return false;
+            }
+
+            if (pointcloudMaterial == null)
+            {
+                UnityEngine.Debug.LogError("Pointcloud default material could not be loaded!");
+                return false;
+            }
+
+            return true;
         }
 
         public void SetPointSize(float size)
         {
             pointSize = size;
 
-            if(pointcloudRenderer != null)
+            if (pointcloudRenderer != null)
                 pointcloudRenderer.SetPointSize(size);
-            if(thumbnailPCRenderer != null)
+            if (thumbnailPCRenderer != null)
                 thumbnailPCRenderer.SetPointSize(size);
         }
 
@@ -356,38 +387,18 @@ namespace BuildingVolumes.Streaming
             if (Directory.Exists(pathToSequence))
             {
                 thumbnailReader = new BufferedGeometryReader();
-                if(!thumbnailReader.SetupReader(pathToSequence, 1))
+                if (!thumbnailReader.SetupReader(pathToSequence, 1))
                 {
-                    Debug.LogWarning("Could not load thumbnail for sequence: " +  pathToSequence);
+                    Debug.LogWarning("Could not load thumbnail for sequence: " + pathToSequence);
                     return;
                 }
 
+                ConfigureRenderObject(gameObject, thumbnailReader.sequenceConfig, true, out thumbnailMeshRenderer, out thumbnailMeshFilter, out thumbnailPCRenderer);
+
                 Frame thumbnail = thumbnailReader.frameBuffer[0];
-
-                thumbnailReader.LoadFrameImmediate(thumbnail, 0);
-
-                thumbnailMeshRenderer = GetComponent<MeshRenderer>();
-                thumbnailMeshFilter = GetComponent<MeshFilter>();
-                thumbnailPCRenderer = GetComponent<PointcloudRenderer>();
-
-                if (!thumbnailMeshFilter)
-                    thumbnailMeshFilter = gameObject.AddComponent<MeshFilter>();
-                if (!thumbnailMeshRenderer)
-                    thumbnailMeshRenderer = gameObject.AddComponent<MeshRenderer>();
-                if (!thumbnailPCRenderer)
-                    thumbnailPCRenderer = gameObject.AddComponent<PointcloudRenderer>();
-
-                thumbnailMeshFilter.hideFlags = HideFlags.DontSave | HideFlags.HideInInspector;
-                thumbnailMeshRenderer.hideFlags = HideFlags.DontSave | HideFlags.HideInInspector;
-                thumbnailPCRenderer.hideFlags = HideFlags.DontSave | HideFlags.HideInInspector;
-
-                if (thumbnail.geometryType == SequenceConfiguration.GeometryType.point)
-                    thumbnailMeshRenderer.material = pointcloudMaterial;
-                else
-                    thumbnailMeshRenderer.material = meshMaterial;
-
-                thumbnailPCRenderer.SetupPointcloudRenderer(thumbnailReader.sequenceConfig.maxVertexCount, thumbnailMeshFilter);
-                thumbnailPCRenderer.SetPointSize(pointSize);
+                thumbnailReader.LoadFrameImmediate(thumbnail, 0);  
+                if(thumbnailReader.sequenceConfig.geometryType == SequenceConfiguration.GeometryType.point)
+                    thumbnailPCRenderer.SetPointSize(pointSize);
                 ShowFrameData(thumbnail, thumbnailMeshFilter, gameObject, thumbnailPCRenderer, thumbnailReader.sequenceConfig);
 
                 //Before a domain reload destroys the values set in this script, we need to free the memory
@@ -428,12 +439,6 @@ namespace BuildingVolumes.Streaming
 
             if (texture != null)
                 Destroy(texture);
-        }
-
-        public void DisposeDisplayedGeometry()
-        {
-            streamedMeshFilter.sharedMesh = null;
-            streamedMeshFilter.mesh = new Mesh();
         }
 
         void OnDestroy()
@@ -505,7 +510,7 @@ namespace BuildingVolumes.Streaming
 
         static void ClearThumbnailOnSceneClosed(UnityEngine.SceneManagement.Scene scene1, bool removingScene)
         {
-            if(EditorApplication.isPlaying) 
+            if (EditorApplication.isPlaying)
                 return;
 
             ClearThumbnail();

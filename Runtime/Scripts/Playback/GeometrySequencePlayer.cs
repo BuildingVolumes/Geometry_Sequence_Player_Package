@@ -182,7 +182,6 @@ namespace BuildingVolumes.Streaming
         {
             Pause();
             GoToFrame(0);
-            stream.DisposeDisplayedGeometry();
         }
 
         /// <summary>
