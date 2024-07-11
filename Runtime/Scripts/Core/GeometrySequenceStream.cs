@@ -35,8 +35,9 @@ namespace BuildingVolumes.Streaming
         MeshRenderer thumbnailMeshRenderer;
         PointcloudRenderer thumbnailPCRenderer;
         BufferedGeometryReader thumbnailReader;
+        Texture2D thumbnailTexture;
 
-        bool readerIsReady = false;
+        bool readerInitialized = false;
 
         public bool frameDropped = false;
         public int currentFrameIndex = 0;
@@ -75,49 +76,38 @@ namespace BuildingVolumes.Streaming
         public bool ChangeSequence(string absolutePathToSequence, float playbackFPS)
         {
             CleanupSequence();
-            CleanupMeshAndTexture();
+            readerInitialized = false;
             currentFrameIndex = 0;
 
-            this.pathToSequence = absolutePathToSequence;
-
-            string[] paths;
-
-            try { paths = Directory.GetFiles(pathToSequence, "*.ply"); }
-
-            catch (System.Exception e)
-            {
-                UnityEngine.Debug.LogError("Error getting sequence files, folder is probably empty: " + pathToSequence + " Error: " + e.Message);
-                return false;
-            }
-
-            if (paths.Length == 0)
-            {
-                UnityEngine.Debug.LogError("Couldn't find .ply files in sequence directory: " + pathToSequence);
-                return false;
-            }
+            pathToSequence = absolutePathToSequence;
 
             bufferedReader = new BufferedGeometryReader();
             if (!bufferedReader.SetupReader(pathToSequence, bufferSize))
-                return false;
+                return readerInitialized;
 
-            bool meshRes = CreateStreamObject();
-            bool textureRes = SetupTexture();
-            readerIsReady = meshRes && textureRes;
+            if (!CreateStreamObject())
+                return readerInitialized;
 
-            if (!readerIsReady)
+            //If we have a single texture in the sequence, we read it immidiatly
+            if(bufferedReader.sequenceConfig.textureMode == SequenceConfiguration.TextureMode.Single)
             {
-                UnityEngine.Debug.LogError("Reader could not be set up correctly, stopping playback!");
-                return false;
+                if(bufferedReader.frameBuffer[0].textureJobHandle != null)
+                {
+                    bufferedReader.SetupFrameForReading(bufferedReader.frameBuffer[0], bufferedReader.sequenceConfig, 0);
+                    bufferedReader.ScheduleTextureReadJob(bufferedReader.frameBuffer[0], bufferedReader.texturesFilePath[0]);
+                    ShowTextureData(bufferedReader.frameBuffer[0], texture);                    
+                }
             }
 
             targetFrameTimeMs = 1000f / (float)playbackFPS;
 
-            return true;
+            readerInitialized = true;
+            return readerInitialized;
         }
 
         public void UpdateFrame(float playbackTimeInMs)
         {
-            if (!readerIsReady)
+            if (!readerInitialized)
                 return;
 
             elapsedMsSinceLastFrame += Time.deltaTime * 1000;
@@ -136,7 +126,7 @@ namespace BuildingVolumes.Streaming
                 if (frameBufferIndex > -1)
                 {
                     //The frame has been loaded and we'll show the model (& texture)
-                    ShowFrameData(bufferedReader.frameBuffer[frameBufferIndex], streamedMeshFilter, streamedMeshObject, pointcloudRenderer, bufferedReader.sequenceConfig);
+                    ShowFrameData(bufferedReader.frameBuffer[frameBufferIndex], streamedMeshFilter, streamedMeshObject, pointcloudRenderer, bufferedReader.sequenceConfig, texture);
                     bufferedReader.frameBuffer[frameBufferIndex].wasConsumed = true;
 
                     float decay = 0.95f;
@@ -160,14 +150,12 @@ namespace BuildingVolumes.Streaming
         /// Display mesh and texture data from a frame buffer
         /// </summary>
         /// <param name="frame"></param>
-        public void ShowFrameData(Frame frame, MeshFilter meshFilter, GameObject streamObject, PointcloudRenderer pcRenderer, SequenceConfiguration config)
+        public void ShowFrameData(Frame frame, MeshFilter meshFilter, GameObject streamObject, PointcloudRenderer pcRenderer, SequenceConfiguration config, Texture2D texture)
         {
             ShowGeometryData(frame, meshFilter, streamObject, pcRenderer, config);
 
-            //if (frame.ddsHeaderInfo.size > 0)
-            //{
-            //    ShowTextureData(frame, meshrenderer);
-            //}
+            if (config.textureMode == SequenceConfiguration.TextureMode.PerFrame)
+                ShowTextureData(frame, texture);
         }
 
 
@@ -215,23 +203,12 @@ namespace BuildingVolumes.Streaming
         /// Reads texture data from a frame buffer. Doesn't dispose of the data, you need to do that manually!
         /// </summary>
         /// <param name="frame"></param>
-        void ShowTextureData(Frame frame, MeshRenderer meshRenderer)
+        void ShowTextureData(Frame frame, Texture2D texture)
         {
+
             frame.textureJobHandle.Complete();
-
-            NativeArray<byte> textureRaw = texture.GetRawTextureData<byte>();
-
-            //if (textureRaw.Length != frame.textureBufferRaw.Length)
-            //{
-            //    texture = new Texture2D(textureHeader.width, textureHeader.height, TextureFormat.DXT1, false);
-            //    textureRaw = texture.GetRawTextureData<byte>();
-            //}
-
-            textureRaw.CopyFrom(frame.textureBufferRaw);
+            texture.SetPixelData<byte>(frame.textureBufferRaw, 0);
             texture.Apply();
-
-            if (meshRenderer.material.GetTexture("_MainTex") != texture)
-                meshRenderer.material.SetTexture("_MainTex", texture);
         }
 
         bool CreateStreamObject()
@@ -247,10 +224,10 @@ namespace BuildingVolumes.Streaming
             streamedMeshObject.transform.localRotation = Quaternion.identity;
             streamedMeshObject.transform.localScale = Vector3.one;
 
-            return ConfigureRenderObject(streamedMeshObject, bufferedReader.sequenceConfig, false, out streamedMeshRenderer, out streamedMeshFilter, out pointcloudRenderer);
+            return ConfigureRenderObject(streamedMeshObject, bufferedReader.sequenceConfig, false, out streamedMeshRenderer, out streamedMeshFilter, out pointcloudRenderer, out texture);
         }
 
-        bool ConfigureRenderObject(GameObject renderObject, SequenceConfiguration config, bool hidden, out MeshRenderer renderer, out MeshFilter meshfilter, out PointcloudRenderer pcRenderer)
+        bool ConfigureRenderObject(GameObject renderObject, SequenceConfiguration config, bool hidden, out MeshRenderer renderer, out MeshFilter meshfilter, out PointcloudRenderer pcRenderer, out Texture2D texture)
         {
             bool pc = config.geometryType == SequenceConfiguration.GeometryType.point;
 
@@ -260,12 +237,14 @@ namespace BuildingVolumes.Streaming
 
             if (!meshfilter)
                 meshfilter = renderObject.AddComponent<MeshFilter>();
-            if(!meshfilter.sharedMesh)
+            if (!meshfilter.sharedMesh)
                 meshfilter.sharedMesh = new Mesh();
             if (!renderer)
                 renderer = renderObject.AddComponent<MeshRenderer>();
             if (!pcRenderer && pc)
                 pcRenderer = renderObject.AddComponent<PointcloudRenderer>();
+
+            texture = new Texture2D(config.textureWidth, config.textureHeight, TextureFormat.DXT1, false);
 
             if (hidden)
             {
@@ -279,60 +258,15 @@ namespace BuildingVolumes.Streaming
                 return false;
 
             if (pc)
-                renderer.material = pointcloudMaterial; //new Material?
+                renderer.sharedMaterial = pointcloudMaterial; //new Material?
             else
-                renderer.material = meshMaterial;
+                renderer.sharedMaterial = meshMaterial;
 
             if (config.textureMode != SequenceConfiguration.TextureMode.None)
-                renderer.material.SetTexture("_MainTex", texture);
+                renderer.sharedMaterial.SetTexture("_MainTex", texture);
 
             if (pc)
                 pcRenderer.SetupPointcloudRenderer(config.maxVertexCount, meshfilter);
-
-            return true;
-        }
-
-        bool SetupTexture()
-        {
-            //string[] textureFiles = Directory.GetFiles(pathToSequence + "/", "*.dds");
-
-            //HeaderDDS headerDDS = new HeaderDDS();
-
-            //TextureMode textureMode = TextureMode.None;
-
-            //if (textureFiles.Length > 0)
-            //{
-            //    headerDDS = bufferedReader.ReadDDSHeader(textureFiles[0]);
-
-            //    if (headerDDS.error)
-            //        return false;
-
-            //    texture = new Texture2D(headerDDS.width, headerDDS.height, TextureFormat.DXT1, false);
-
-            //    //Case: A single texture for the whole geometry sequence
-            //    if (textureFiles.Length == 1)
-            //    {
-            //        textureMode = TextureMode.Single;
-
-            //        //In this case we simply pre-load the texture at the start
-            //        Frame textureLoad = new Frame();
-            //        textureLoad.textureBufferRaw = new NativeArray<byte>(headerDDS.size, Allocator.Persistent);
-            //        textureLoad = bufferedReader.ScheduleTextureJob(textureLoad, textureFiles[0]);
-            //        ShowTextureData(textureLoad, streamedMeshRenderer);
-            //        textureLoad.textureBufferRaw.Dispose();
-            //    }
-
-            //    //Case: Each frame has its own texture
-            //    if (textureFiles.Length > 1)
-            //        textureMode = TextureMode.PerFrame;
-
-            //}
-
-            //else
-            //    textureMode = TextureMode.None;
-
-            //if (!bufferedReader.SetupTextureReader(textureMode, headerDDS))
-            //    return false;
 
             return true;
         }
@@ -393,13 +327,23 @@ namespace BuildingVolumes.Streaming
                     return;
                 }
 
-                ConfigureRenderObject(gameObject, thumbnailReader.sequenceConfig, true, out thumbnailMeshRenderer, out thumbnailMeshFilter, out thumbnailPCRenderer);
+                ConfigureRenderObject(gameObject, thumbnailReader.sequenceConfig, true, out thumbnailMeshRenderer, out thumbnailMeshFilter, out thumbnailPCRenderer, out thumbnailTexture);
 
                 Frame thumbnail = thumbnailReader.frameBuffer[0];
-                thumbnailReader.LoadFrameImmediate(thumbnail, 0);  
-                if(thumbnailReader.sequenceConfig.geometryType == SequenceConfiguration.GeometryType.point)
+                thumbnailReader.SetupFrameForReading(thumbnail, thumbnailReader.sequenceConfig, 0);
+                thumbnailReader.ScheduleGeometryReadJob(thumbnail, thumbnailReader.plyFilePaths[0]);
+                ShowGeometryData(thumbnail, thumbnailMeshFilter, gameObject, thumbnailPCRenderer, thumbnailReader.sequenceConfig);
+
+                if (thumbnailReader.sequenceConfig.geometryType == SequenceConfiguration.GeometryType.point)
                     thumbnailPCRenderer.SetPointSize(pointSize);
-                ShowFrameData(thumbnail, thumbnailMeshFilter, gameObject, thumbnailPCRenderer, thumbnailReader.sequenceConfig);
+
+                if (thumbnailReader.sequenceConfig.textureMode != SequenceConfiguration.TextureMode.None)
+                {
+                    thumbnailReader.ScheduleTextureReadJob(thumbnail, thumbnailReader.texturesFilePath[0]);
+                    ShowTextureData(thumbnail, thumbnailTexture);
+                }
+
+                ShowFrameData(thumbnail, thumbnailMeshFilter, gameObject, thumbnailPCRenderer, thumbnailReader.sequenceConfig, thumbnailTexture);
 
                 //Before a domain reload destroys the values set in this script, we need to free the memory
                 AssemblyReloadEvents.beforeAssemblyReload += ClearEditorThumbnail;
@@ -420,6 +364,9 @@ namespace BuildingVolumes.Streaming
 
             if (thumbnailPCRenderer != null)
                 thumbnailPCRenderer.EndEditorLife();
+
+            if (thumbnailTexture != null)
+                DestroyImmediate(thumbnailTexture);
         }
 
 
@@ -430,6 +377,7 @@ namespace BuildingVolumes.Streaming
                 bufferedReader.DisposeFrameBuffer(true);
             }
 
+            CleanupMeshAndTexture();
         }
 
         void CleanupMeshAndTexture()

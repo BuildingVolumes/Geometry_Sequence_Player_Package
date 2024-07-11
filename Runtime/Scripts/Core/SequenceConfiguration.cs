@@ -8,7 +8,7 @@ namespace BuildingVolumes.Streaming
     public class SequenceConfiguration
     {
         public enum GeometryType {point = 0, mesh = 1, texturedMesh = 2};
-        public enum TextureMode {None = 0, single = 1, PerFrame = 2};
+        public enum TextureMode {None = 0, Single = 1, PerFrame = 2};
 
         public GeometryType geometryType;
         public TextureMode textureMode;

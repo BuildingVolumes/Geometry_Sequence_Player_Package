@@ -18,7 +18,7 @@ namespace BuildingVolumes.Streaming
 
     public class Frame
     {
-        public NativeArray<byte> vertexBufferRaw; 
+        public NativeArray<byte> vertexBufferRaw;
         public NativeArray<int> indiceBufferRaw;
         public NativeArray<byte> textureBufferRaw;
 
@@ -27,6 +27,9 @@ namespace BuildingVolumes.Streaming
         public bool hasUVs;
 
         public int headerSize;
+        public int textureWidth;
+        public int textureHeight;
+        public int textureSize;
         public int vertexCount;
         public int indiceCount;
 
@@ -112,6 +115,28 @@ namespace BuildingVolumes.Streaming
                 return false;
             }
 
+            if (sequenceConfig.textureMode != SequenceConfiguration.TextureMode.None)
+            {
+                try
+                {
+                    //Add a temporary padding to the file list, as otherwise the file order will be messed up
+                    texturesFilePath = new List<string>(Directory.GetFiles(folder, "*.dds")).OrderBy(file =>
+                    Regex.Replace(file, @"\d+", match => match.Value.PadLeft(9, '0'))).ToArray<string>();
+                }
+
+                catch (Exception e)
+                {
+                    Debug.LogError("Sequence path is not valid or has restricted access! Path: " + folder + " Error: " + e.Message);
+                    return false;
+                }
+
+                if (plyFilePaths.Length == 0)
+                {
+                    Debug.LogError("No .dds texture files in the sequence directory: " + folder);
+                    return false;
+                }
+            }
+
             bufferSize = frameBufferSize;
             totalFrames = plyFilePaths.Length;
             frameBuffer = new Frame[bufferSize];
@@ -173,23 +198,11 @@ namespace BuildingVolumes.Streaming
 
                     if (newPlaybackIndex < totalFrames)
                     {
-                        Frame newFrame = frameBuffer[i];
-                        newFrame.geometryType = sequenceConfig.geometryType;
-                        newFrame.textureMode = sequenceConfig.textureMode;
-                        newFrame.playbackIndex = newPlaybackIndex;
-                        newFrame.headerSize = sequenceConfig.headerSizes[newPlaybackIndex];
-                        newFrame.vertexCount = sequenceConfig.verticeCounts[newPlaybackIndex];
-                        newFrame.maxVertexCount = sequenceConfig.maxVertexCount;
-                        newFrame.indiceCount = sequenceConfig.indiceCounts[newPlaybackIndex];
-                        newFrame.maxIndiceCount = sequenceConfig.maxIndiceCount;
+                        SetupFrameForReading(frameBuffer[i], sequenceConfig, newPlaybackIndex);
+                        ScheduleGeometryReadJob(frameBuffer[i], plyFilePaths[newPlaybackIndex]);
+                        if(sequenceConfig.textureMode == SequenceConfiguration.TextureMode.PerFrame)
+                            ScheduleTextureReadJob(frameBuffer[i], texturesFilePath[newPlaybackIndex]);
 
-                        newFrame = ScheduleGeometryReadJob(newFrame, plyFilePaths[newPlaybackIndex]);
-
-                        //if (newFrame.textureMode == TextureMode.PerFrame && !newFrame.plyHeaderInfo.error)
-                        //    newFrame = ScheduleTextureJob(newFrame, texturesFilePath[newPlaybackIndex]);
-
-                        newFrame.wasConsumed = false;
-                        frameBuffer[i] = newFrame;
                         framesToBuffer.Remove(newPlaybackIndex);
                     }
                 }
@@ -198,20 +211,21 @@ namespace BuildingVolumes.Streaming
             JobHandle.ScheduleBatchedJobs();
         }
 
-        public void LoadFrameImmediate(Frame frame, int index)
+        public void SetupFrameForReading(Frame frame, SequenceConfiguration config, int index)
         {
-            frame.headerSize = sequenceConfig.headerSizes[index];
-            frame.vertexCount = sequenceConfig.verticeCounts[index];
-            frame.indiceCount = sequenceConfig.indiceCounts[index];
-            frame = ScheduleGeometryReadJob(frame, plyFilePaths[index]);
-            frame.geoJobHandle.Complete();
-
-            //if(sequenceConfig.textureMode != SequenceConfiguration.TextureMode.None)
-            //{
-            //    frame = ScheduleTextureJob(frame, texturesFilePath[index]);
-            //    frame.textureJobHandle.Complete();
-            //}
-
+            frame.geometryType = config.geometryType;
+            frame.textureMode = config.textureMode;
+            frame.hasUVs = config.hasUVs;
+            frame.playbackIndex = index;
+            frame.headerSize = config.headerSizes[index];
+            frame.vertexCount = config.verticeCounts[index];
+            frame.maxVertexCount = config.maxVertexCount;
+            frame.indiceCount = config.indiceCounts[index];
+            frame.maxIndiceCount = config.maxIndiceCount;
+            frame.textureWidth = config.textureWidth;
+            frame.textureHeight = config.textureHeight;
+            frame.textureSize = config.textureSize;
+            frame.wasConsumed = false;
         }
 
         void AllocateFrame(Frame frame, SequenceConfiguration config)
@@ -219,26 +233,6 @@ namespace BuildingVolumes.Streaming
             VertexAttributeDescriptor[] layout = new VertexAttributeDescriptor[0];
 
             frame.geometryType = config.geometryType;
-            switch (config.geometryType)
-            {
-                case GeometryType.point:
-                    layout = new[] {
-                    new VertexAttributeDescriptor(VertexAttribute.Position, VertexAttributeFormat.Float32, 3),
-                    new VertexAttributeDescriptor(VertexAttribute.Color, VertexAttributeFormat.UNorm8, 4) };
-                    break;
-
-                case GeometryType.mesh:
-                    layout = new[] { new VertexAttributeDescriptor(VertexAttribute.Position, VertexAttributeFormat.Float32, 3) };
-                    break;
-
-                case GeometryType.texturedMesh:
-                    layout = new[] { new VertexAttributeDescriptor(VertexAttribute.Position, VertexAttributeFormat.Float32, 3),
-                    new VertexAttributeDescriptor(VertexAttribute.TexCoord0, VertexAttributeFormat.Float32, 2) };
-                    break;
-
-                default:
-                    break;
-            }
 
             //Allocate every frame with the highest amount of vertices and indices being used in this sequence. 
             //This way, we can re-use the meshArrays, instead of re-allocating them each frame
@@ -259,54 +253,10 @@ namespace BuildingVolumes.Streaming
 
             if (config.textureMode == SequenceConfiguration.TextureMode.PerFrame)
                 frame.textureBufferRaw = new NativeArray<byte>(config.textureSize, Allocator.Persistent);
+            else if(config.textureMode == SequenceConfiguration.TextureMode.Single && frame.playbackIndex == 0)
+                frame.textureBufferRaw = new NativeArray<byte>(config.textureSize, Allocator.Persistent);
             else
                 frame.textureBufferRaw = new NativeArray<byte>(1, Allocator.Persistent);
-        }
-
-
-        /// <summary>
-        /// Deletes frames that are either in the past of current Frame index,
-        /// or too far in the future (the whole buffer size away from the current Frame Index)
-        /// Should be regularily called to keep the buffer clean
-        /// </summary>
-        /// <param name="currentFrameIndex">The currently shown/played back frame</param>
-        public void DeleteFramesOutsideOfBufferRange(int currentFrameIndex)
-        {
-            //We want to treat the buffer as a ring buffer, so that when we're looping,
-            //the playback doesn't stutter. This means if the current Frame index is near
-            //the end of the buffer, our buffer range extends to the beginning again
-
-            //int minFrame = currentFrameIndex;
-            //int maxframe = currentFrameIndex + bufferSize;
-            //if (maxframe >= totalFrames)
-            //    maxframe -= (totalFrames - 1);
-
-            //for (int i = 0; i < frameBuffer.Length; i++)
-            //{
-            //    bool dispose = true;
-            //    int playbackIndex = frameBuffer[i].playbackIndex;
-
-            //    if (minFrame < maxframe)
-            //    {
-            //        if (playbackIndex >= minFrame && playbackIndex < maxframe)
-            //            dispose = false;
-            //    }
-
-            //    else
-            //    {
-            //        if (playbackIndex >= maxframe || playbackIndex < maxframe)
-            //            dispose = false;
-            //    }
-
-            //    if (dispose)
-            //    {
-            //        if (!frameBuffer[i].isDisposed)
-            //        {
-            //            bool disposed = DisposeFrame(i, false, false);
-            //        }
-            //    }
-
-            //}
         }
 
         /// <summary>
@@ -392,7 +342,7 @@ namespace BuildingVolumes.Streaming
         /// <param name="frame">The frame into which to load the data. The meshdataarray needs to be initialized already</param>
         /// <param name="plyPath">The absolute path to the .ply file </param>
         /// <returns></returns>
-        public Frame ScheduleGeometryReadJob(Frame frame, string plyPath)
+        public void ScheduleGeometryReadJob(Frame frame, string plyPath)
         {
             frame.geoJob = new ReadGeometryJob();
             frame.geoJob.pathCharArray = new NativeArray<byte>(Encoding.UTF8.GetBytes(plyPath), Allocator.Persistent);
@@ -405,9 +355,6 @@ namespace BuildingVolumes.Streaming
             frame.geoJob.vertexBuffer = frame.vertexBufferRaw;
             frame.geoJob.indiceBuffer = frame.indiceBufferRaw;
             frame.geoJobHandle = frame.geoJob.Schedule(frame.geoJobHandle);
-
-            return frame;
-
         }
 
         /// <summary>
@@ -416,26 +363,13 @@ namespace BuildingVolumes.Streaming
         /// <param name="frame">The frame data into which the texture will be loaded. The textureBufferRaw needs to be intialized already </param>
         /// <param name="texturePath"></param>
         /// <returns></returns>
-        //public Frame ScheduleTextureJob(Frame frame, string texturePath)
-        //{
-        //    frame.textureJob = new ReadTextureJob();
-
-        //    if (!frame.ddsHeaderInfo.error && frame.ddsHeaderInfo.size > 0)
-        //    {
-        //        if (frame.textureBufferRaw.Length != frame.ddsHeaderInfo.size)
-        //        {
-        //            frame.textureJobHandle.Complete();
-        //            frame.textureBufferRaw = new NativeArray<byte>(frame.ddsHeaderInfo.size, Allocator.Persistent);
-        //        }
-
-        //        frame.textureJob.textureRawData = frame.textureBufferRaw;
-        //        frame.textureJob.texturePathCharArray = new NativeArray<byte>(Encoding.UTF8.GetBytes(texturePath), Allocator.TempJob);
-
-        //        frame.textureJobHandle = frame.textureJob.Schedule(frame.textureJobHandle);
-        //    }
-
-        //    return frame;
-        //}
+        public void ScheduleTextureReadJob(Frame frame, string texturePath)
+        {
+            frame.textureJob = new ReadTextureJob();
+            frame.textureJob.textureRawData = frame.textureBufferRaw;
+            frame.textureJob.texturePathCharArray = new NativeArray<byte>(Encoding.UTF8.GetBytes(texturePath), Allocator.Persistent);
+            frame.textureJobHandle = frame.textureJob.Schedule(frame.textureJobHandle);
+        }
 
 
         /// <summary>
@@ -502,14 +436,6 @@ namespace BuildingVolumes.Streaming
 
             else
             {
-                float[] verts = new float[vertexCount];
-                for (int i = 0; i < vertexCount; i++)
-                {
-                    byte[] vert = new byte[4];
-                    Buffer.BlockCopy(byteBuffer, i * 4, vert, 0, 4);
-                    verts[i] = BitConverter.ToSingle(vert, 0);
-                }
-
                 int vertexBufferSize = hasUVs ? vertexCount * 5 * 4 : vertexCount * 3 * 4;
                 NativeArray<byte>.Copy(byteBuffer, vertexBuffer, vertexBufferSize);
                 //Reading the index is a bit more tricky because each index line contains the number of indices in that line, which we dont want to include
