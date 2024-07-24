@@ -9,16 +9,20 @@ namespace BuildingVolumes.Streaming
     {
         public enum GeometryType {point = 0, mesh = 1, texturedMesh = 2};
         public enum TextureMode {None = 0, Single = 1, PerFrame = 2};
+        public enum TextureFormat { NotSupported = 0, DDS = 1, ASTC = 2};
 
         public GeometryType geometryType;
         public TextureMode textureMode;
+        public bool DDS;
+        public bool ASTC;
         public bool hasUVs;
         public int maxVertexCount;
         public int maxIndiceCount;
         public List<float> maxBounds;
         public int textureWidth;
         public int textureHeight;
-        public int textureSize;
+        public int textureSizeDDS;
+        public int textureSizeASTC;
         public List<int> headerSizes;
         public List<int> verticeCounts;
         public List<int> indiceCounts;
@@ -77,6 +81,17 @@ namespace BuildingVolumes.Streaming
             size.z = Mathf.Abs(maxBounds[2]) + Mathf.Abs(maxBounds[5]);
 
             return new Bounds(center, size);
+        }
+
+        static public TextureFormat GetDeviceDependentTextureFormat()
+        {
+#if UNITY_EDITOR || UNITY_STANDALONE_WIN || UNITY_STANDALONE_OSX || UNITY_STANDALONE_LINUX
+            return TextureFormat.DDS;
+#elif UNITY_IOS || UNITY_VISIONOS || UNITY_ANDROID || UNITY_TVOS
+            return TextureFormat.ASTC;
+#else
+            return TextureFormat.NotSupported;
+#endif
         }
 
     }

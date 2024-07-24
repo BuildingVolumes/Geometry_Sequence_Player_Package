@@ -22,19 +22,7 @@ namespace BuildingVolumes.Streaming
         public NativeArray<int> indiceBufferRaw;
         public NativeArray<byte> textureBufferRaw;
 
-        public SequenceConfiguration.GeometryType geometryType;
-        public SequenceConfiguration.TextureMode textureMode;
-        public bool hasUVs;
-
-        public int headerSize;
-        public int textureWidth;
-        public int textureHeight;
-        public int textureSize;
-        public int vertexCount;
-        public int indiceCount;
-
-        public int maxVertexCount;
-        public int maxIndiceCount;
+        public SequenceConfiguration sequenceConfiguration;
 
         public ReadGeometryJob geoJob;
         public JobHandle geoJobHandle;
@@ -46,9 +34,6 @@ namespace BuildingVolumes.Streaming
 
         public Frame()
         {
-            headerSize = 0;
-            vertexCount = 0;
-            indiceCount = 0;
             playbackIndex = 0;
             wasConsumed = true;
         }
@@ -61,7 +46,8 @@ namespace BuildingVolumes.Streaming
         public string folder;
         public SequenceConfiguration sequenceConfig;
         public string[] plyFilePaths;
-        public string[] texturesFilePath;
+        public string[] texturesFilePathDDS;
+        public string[] texturesFilePathASTC;
         public int bufferSize = 4;
         public int totalFrames = 0;
 
@@ -117,24 +103,59 @@ namespace BuildingVolumes.Streaming
 
             if (sequenceConfig.textureMode != SequenceConfiguration.TextureMode.None)
             {
-                try
+                if (sequenceConfig.DDS)
                 {
-                    //Add a temporary padding to the file list, as otherwise the file order will be messed up
-                    texturesFilePath = new List<string>(Directory.GetFiles(folder, "*.dds")).OrderBy(file =>
-                    Regex.Replace(file, @"\d+", match => match.Value.PadLeft(9, '0'))).ToArray<string>();
+                    try
+                    {
+                        //Add a temporary padding to the file list, as otherwise the file order will be messed up
+                        texturesFilePathDDS = new List<string>(Directory.GetFiles(folder, "*.dds")).OrderBy(file =>
+                        Regex.Replace(file, @"\d+", match => match.Value.PadLeft(9, '0'))).ToArray<string>();
+                    }
+
+                    catch (Exception e)
+                    {
+                        Debug.LogError("Sequence path is not valid or has restricted access! Path: " + folder + " Error: " + e.Message);
+                        return false;
+                    }
+
+                    if (texturesFilePathDDS.Length == 0 && GetDeviceDependentTextureFormat() == SequenceConfiguration.TextureFormat.DDS)
+                    {
+                        Debug.LogError("No .dds texture files (for desktop devices) could be found! Make sure that you converted and uploaded .dds textures for this device!");
+                        return false;
+                    }
                 }
 
-                catch (Exception e)
+                if (sequenceConfig.ASTC)
                 {
-                    Debug.LogError("Sequence path is not valid or has restricted access! Path: " + folder + " Error: " + e.Message);
-                    return false;
+                    try
+                    {
+                        //Add a temporary padding to the file list, as otherwise the file order will be messed up
+                        texturesFilePathASTC = new List<string>(Directory.GetFiles(folder, "*.astc")).OrderBy(file =>
+                        Regex.Replace(file, @"\d+", match => match.Value.PadLeft(9, '0'))).ToArray<string>();
+                    }
+
+                    catch (Exception e)
+                    {
+                        Debug.LogError("Sequence path is not valid or has restricted access! Path: " + folder + " Error: " + e.Message);
+                        return false;
+                    }
+
+                    if (texturesFilePathASTC.Length == 0 && GetDeviceDependentTextureFormat() == SequenceConfiguration.TextureFormat.ASTC)
+                    {
+                        Debug.LogError("No .astc texture files (for mobile devices) could be found! Make sure that you converted and uploaded .astc texture files to this device!");
+                        return false;
+                    }
                 }
 
-                if (plyFilePaths.Length == 0)
+
+#if UNITY_EDITOR
+                if (texturesFilePathASTC.Length > 0 && texturesFilePathDDS.Length == 0)
                 {
-                    Debug.LogError("No .dds texture files in the sequence directory: " + folder);
-                    return false;
+                    Debug.LogError("Only .astc texture files for mobile devices have been found in your sequence." +
+                        "Astc Textures cannot not be displayed in the editor. To display textures in the editor" +
+                        "please additionally generate .dds textures with the converter utility!");
                 }
+#endif
             }
 
             bufferSize = frameBufferSize;
@@ -144,6 +165,7 @@ namespace BuildingVolumes.Streaming
             for (int i = 0; i < frameBuffer.Length; i++)
             {
                 frameBuffer[i] = new Frame();
+                frameBuffer[i].sequenceConfiguration = sequenceConfig;
                 AllocateFrame(frameBuffer[i], sequenceConfig);
                 frameBuffer[i].playbackIndex = -1;
             }
@@ -200,8 +222,8 @@ namespace BuildingVolumes.Streaming
                     {
                         SetupFrameForReading(frameBuffer[i], sequenceConfig, newPlaybackIndex);
                         ScheduleGeometryReadJob(frameBuffer[i], plyFilePaths[newPlaybackIndex]);
-                        if(sequenceConfig.textureMode == SequenceConfiguration.TextureMode.PerFrame)
-                            ScheduleTextureReadJob(frameBuffer[i], texturesFilePath[newPlaybackIndex]);
+                        if (sequenceConfig.textureMode == SequenceConfiguration.TextureMode.PerFrame)
+                            ScheduleTextureReadJob(frameBuffer[i], GetDeviceDependendentTexturePath(newPlaybackIndex));
 
                         framesToBuffer.Remove(newPlaybackIndex);
                     }
@@ -213,18 +235,8 @@ namespace BuildingVolumes.Streaming
 
         public void SetupFrameForReading(Frame frame, SequenceConfiguration config, int index)
         {
-            frame.geometryType = config.geometryType;
-            frame.textureMode = config.textureMode;
-            frame.hasUVs = config.hasUVs;
+            frame.sequenceConfiguration = config;
             frame.playbackIndex = index;
-            frame.headerSize = config.headerSizes[index];
-            frame.vertexCount = config.verticeCounts[index];
-            frame.maxVertexCount = config.maxVertexCount;
-            frame.indiceCount = config.indiceCounts[index];
-            frame.maxIndiceCount = config.maxIndiceCount;
-            frame.textureWidth = config.textureWidth;
-            frame.textureHeight = config.textureHeight;
-            frame.textureSize = config.textureSize;
             frame.wasConsumed = false;
         }
 
@@ -232,7 +244,7 @@ namespace BuildingVolumes.Streaming
         {
             VertexAttributeDescriptor[] layout = new VertexAttributeDescriptor[0];
 
-            frame.geometryType = config.geometryType;
+            frame.sequenceConfiguration.geometryType = config.geometryType;
 
             //Allocate every frame with the highest amount of vertices and indices being used in this sequence. 
             //This way, we can re-use the meshArrays, instead of re-allocating them each frame
@@ -249,12 +261,12 @@ namespace BuildingVolumes.Streaming
                 frame.indiceBufferRaw = new NativeArray<int>(config.maxIndiceCount, Allocator.Persistent);
             }
 
-            frame.textureMode = config.textureMode;
+            frame.sequenceConfiguration.textureMode = config.textureMode;
 
             if (config.textureMode == SequenceConfiguration.TextureMode.PerFrame)
-                frame.textureBufferRaw = new NativeArray<byte>(config.textureSize, Allocator.Persistent);
-            else if(config.textureMode == SequenceConfiguration.TextureMode.Single && frame.playbackIndex == 0)
-                frame.textureBufferRaw = new NativeArray<byte>(config.textureSize, Allocator.Persistent);
+                frame.textureBufferRaw = new NativeArray<byte>(GetDeviceDependentTextureSize(config), Allocator.Persistent);
+            else if (config.textureMode == SequenceConfiguration.TextureMode.Single && frame.playbackIndex == 0)
+                frame.textureBufferRaw = new NativeArray<byte>(GetDeviceDependentTextureSize(config), Allocator.Persistent);
             else
                 frame.textureBufferRaw = new NativeArray<byte>(1, Allocator.Persistent);
         }
@@ -335,6 +347,49 @@ namespace BuildingVolumes.Streaming
         }
 
 
+        public int GetDeviceDependentTextureSize(SequenceConfiguration configuration)
+        {
+            SequenceConfiguration.TextureFormat format = GetDeviceDependentTextureFormat();
+
+            switch (format)
+            {
+                case SequenceConfiguration.TextureFormat.DDS:
+                    return configuration.textureSizeDDS;
+                case SequenceConfiguration.TextureFormat.ASTC:
+                    return configuration.textureSizeASTC;
+                case SequenceConfiguration.TextureFormat.NotSupported:
+                default:
+                    return 0;
+            }
+        }
+
+        public string GetDeviceDependendentTexturePath(int playbackIndex)
+        {
+            SequenceConfiguration.TextureFormat format = GetDeviceDependentTextureFormat();
+
+            switch (format)
+            {
+                case SequenceConfiguration.TextureFormat.DDS:
+                    if (texturesFilePathDDS == null)
+                        return "";
+                    if (texturesFilePathDDS.Length < playbackIndex)
+                        return "";
+                    return texturesFilePathDDS[playbackIndex];
+                case SequenceConfiguration.TextureFormat.ASTC:
+                    if (texturesFilePathASTC == null)
+                        return "";
+                    if (texturesFilePathASTC.Length < playbackIndex)
+                        return "";
+                    return texturesFilePathASTC[playbackIndex];
+                case SequenceConfiguration.TextureFormat.NotSupported:
+                default:
+                    return "";
+            }
+        }
+
+
+
+
         /// <summary>
         /// Schedules a Job that reads a .ply Pointcloud or mesh file from disk
         /// and loads it into memory.
@@ -346,12 +401,12 @@ namespace BuildingVolumes.Streaming
         {
             frame.geoJob = new ReadGeometryJob();
             frame.geoJob.pathCharArray = new NativeArray<byte>(Encoding.UTF8.GetBytes(plyPath), Allocator.Persistent);
-            frame.geoJob.geoType = frame.geometryType;
-            frame.geoJob.hasUVs = frame.hasUVs;
-            frame.geoJob.headerSize = frame.headerSize;
-            frame.geoJob.vertexCount = frame.vertexCount;
-            frame.geoJob.indiceCount = frame.indiceCount;
-            frame.geoJob.maxIndiceCount = frame.maxIndiceCount;
+            frame.geoJob.geoType = frame.sequenceConfiguration.geometryType;
+            frame.geoJob.hasUVs = frame.sequenceConfiguration.hasUVs;
+            frame.geoJob.headerSize = frame.sequenceConfiguration.headerSizes[frame.playbackIndex];
+            frame.geoJob.vertexCount = frame.sequenceConfiguration.verticeCounts[frame.playbackIndex];
+            frame.geoJob.indiceCount = frame.sequenceConfiguration.indiceCounts[frame.playbackIndex];
+            frame.geoJob.maxIndiceCount = frame.sequenceConfiguration.maxIndiceCount;
             frame.geoJob.vertexBuffer = frame.vertexBufferRaw;
             frame.geoJob.indiceBuffer = frame.indiceBufferRaw;
             frame.geoJobHandle = frame.geoJob.Schedule(frame.geoJobHandle);
@@ -365,7 +420,14 @@ namespace BuildingVolumes.Streaming
         /// <returns></returns>
         public void ScheduleTextureReadJob(Frame frame, string texturePath)
         {
+            if (texturePath == "")
+            {
+                Debug.LogError("Texture Path to read is empty!");
+                return;
+            }
+
             frame.textureJob = new ReadTextureJob();
+            frame.textureJob.format = GetDeviceDependentTextureFormat();
             frame.textureJob.textureRawData = frame.textureBufferRaw;
             frame.textureJob.texturePathCharArray = new NativeArray<byte>(Encoding.UTF8.GetBytes(texturePath), Allocator.Persistent);
             frame.textureJobHandle = frame.textureJob.Schedule(frame.textureJobHandle);
@@ -457,6 +519,7 @@ namespace BuildingVolumes.Streaming
     {
         public NativeArray<byte> textureRawData;
         public bool readFinished;
+        public SequenceConfiguration.TextureFormat format;
 
         [DeallocateOnJobCompletion]
         public NativeArray<byte> texturePathCharArray;
@@ -470,13 +533,17 @@ namespace BuildingVolumes.Streaming
             texturePathCharArray.CopyTo(texturePathCharBuffer);
             texturePath = Encoding.UTF8.GetString(texturePathCharBuffer);
 
-            int DDS_HEADER_SIZE = 128;
+            int headerSize = 0;
+            if (format == SequenceConfiguration.TextureFormat.DDS)
+                headerSize = 128;
+            if (format == SequenceConfiguration.TextureFormat.ASTC)
+                headerSize = 20;
 
             BinaryReader textureReader = new BinaryReader(new FileStream(texturePath, FileMode.Open));
 
             //As GPUs can access .DDS data directly, we can simply take the binary blob and upload it to the GPU
-            textureReader.BaseStream.Position = DDS_HEADER_SIZE; //Skip the DDS header
-            textureRawData.CopyFrom(textureReader.ReadBytes((int)textureReader.BaseStream.Length - DDS_HEADER_SIZE));
+            textureReader.BaseStream.Position = headerSize; //Skip the DDS header
+            textureRawData.CopyFrom(textureReader.ReadBytes((int)textureReader.BaseStream.Length - headerSize));
             textureReader.Close();
 
             readFinished = true;

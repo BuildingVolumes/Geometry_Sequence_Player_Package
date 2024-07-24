@@ -67,6 +67,10 @@ namespace BuildingVolumes.Streaming
 
             if (GetComponent<MeshRenderer>())
                 GetComponent<MeshRenderer>().enabled = false;
+
+#if !UNITY_EDITOR && !UNITY_STANDALONE_WIN && !UNITY_STANDALONE_OSX && !UNITY_STANDALONE_LINUX && !UNITY_IOS && !UNITY_VISIONOS && !UNITY_ANDROID && !UNITY_TVOS
+            Debug.LogError("Platform not supported by Geometry Sequence Streamer! Playback will probably fail");
+#endif
         }
 
         /// <summary>
@@ -89,13 +93,13 @@ namespace BuildingVolumes.Streaming
                 return readerInitialized;
 
             //If we have a single texture in the sequence, we read it immidiatly
-            if(bufferedReader.sequenceConfig.textureMode == SequenceConfiguration.TextureMode.Single)
+            if (bufferedReader.sequenceConfig.textureMode == SequenceConfiguration.TextureMode.Single)
             {
-                if(bufferedReader.frameBuffer[0].textureJobHandle != null)
+                if (bufferedReader.frameBuffer[0].textureJobHandle != null)
                 {
                     bufferedReader.SetupFrameForReading(bufferedReader.frameBuffer[0], bufferedReader.sequenceConfig, 0);
-                    bufferedReader.ScheduleTextureReadJob(bufferedReader.frameBuffer[0], bufferedReader.texturesFilePath[0]);
-                    ShowTextureData(bufferedReader.frameBuffer[0], texture);                    
+                    bufferedReader.ScheduleTextureReadJob(bufferedReader.frameBuffer[0], bufferedReader.GetDeviceDependendentTexturePath(0));
+                    ShowTextureData(bufferedReader.frameBuffer[0], texture);
                 }
             }
 
@@ -178,7 +182,7 @@ namespace BuildingVolumes.Streaming
 
             if (config.geometryType == SequenceConfiguration.GeometryType.point)
             {
-                pcRenderer.SetPointcloudData(frame.vertexBufferRaw, frame.vertexCount, meshFilter.transform);
+                pcRenderer.SetPointcloudData(frame.vertexBufferRaw, frame.sequenceConfiguration.verticeCounts[frame.playbackIndex], meshFilter.transform);
             }
 
             else
@@ -193,8 +197,8 @@ namespace BuildingVolumes.Streaming
 
                 meshFilter.sharedMesh.SetIndexBufferParams(config.maxIndiceCount, IndexFormat.UInt32);
                 meshFilter.sharedMesh.SetVertexBufferData<byte>(frame.vertexBufferRaw, 0, 0, frame.vertexBufferRaw.Length);
-                meshFilter.sharedMesh.SetIndexBufferData<int>(frame.indiceBufferRaw, 0, 0, frame.indiceCount);
-                meshFilter.sharedMesh.SetSubMesh(0, new SubMeshDescriptor(0, frame.indiceCount), MeshUpdateFlags.DontRecalculateBounds);
+                meshFilter.sharedMesh.SetIndexBufferData<int>(frame.indiceBufferRaw, 0, 0, frame.sequenceConfiguration.indiceCounts[frame.playbackIndex]);
+                meshFilter.sharedMesh.SetSubMesh(0, new SubMeshDescriptor(0, frame.sequenceConfiguration.indiceCounts[frame.playbackIndex]), MeshUpdateFlags.DontRecalculateBounds);
                 meshFilter.sharedMesh.RecalculateNormals();
             }
         }
@@ -244,7 +248,15 @@ namespace BuildingVolumes.Streaming
             if (!pcRenderer && pc)
                 pcRenderer = renderObject.AddComponent<PointcloudRenderer>();
 
-            texture = new Texture2D(config.textureWidth, config.textureHeight, TextureFormat.DXT1, false);
+            if(SequenceConfiguration.GetDeviceDependentTextureFormat() == SequenceConfiguration.TextureFormat.DDS)
+                texture = new Texture2D(config.textureWidth, config.textureHeight, TextureFormat.DXT1, false);
+            else if (SequenceConfiguration.GetDeviceDependentTextureFormat() == SequenceConfiguration.TextureFormat.ASTC)
+                texture = new Texture2D(config.textureWidth, config.textureHeight, TextureFormat.ASTC_6x6, false);
+            else
+            {
+                texture = new Texture2D(1, 1);
+                Debug.LogError("Unsupported Texture Format!");
+            }
 
             if (hidden)
             {
@@ -275,10 +287,10 @@ namespace BuildingVolumes.Streaming
         {
             //Fill up material slots with default materials
             if (pointcloudMaterial == null)
-                pointcloudMaterial = Resources.Load("GS_PointcloudMaterial") as Material;
+                pointcloudMaterial = Resources.Load("GS_VertexColorMat") as Material;
 
             if (meshMaterial == null)
-                meshMaterial = Resources.Load("GS_MeshMaterial") as Material;
+                meshMaterial = Resources.Load("GS_MeshMaterial_Unlit") as Material;
 
             return CheckMaterials();
         }
@@ -332,16 +344,16 @@ namespace BuildingVolumes.Streaming
                 Frame thumbnail = thumbnailReader.frameBuffer[0];
                 thumbnailReader.SetupFrameForReading(thumbnail, thumbnailReader.sequenceConfig, 0);
                 thumbnailReader.ScheduleGeometryReadJob(thumbnail, thumbnailReader.plyFilePaths[0]);
-                ShowGeometryData(thumbnail, thumbnailMeshFilter, gameObject, thumbnailPCRenderer, thumbnailReader.sequenceConfig);
 
                 if (thumbnailReader.sequenceConfig.geometryType == SequenceConfiguration.GeometryType.point)
                     thumbnailPCRenderer.SetPointSize(pointSize);
 
                 if (thumbnailReader.sequenceConfig.textureMode != SequenceConfiguration.TextureMode.None)
                 {
-                    thumbnailReader.ScheduleTextureReadJob(thumbnail, thumbnailReader.texturesFilePath[0]);
+                    thumbnailReader.ScheduleTextureReadJob(thumbnail, thumbnailReader.GetDeviceDependendentTexturePath(0));
                     ShowTextureData(thumbnail, thumbnailTexture);
                 }
+
 
                 ShowFrameData(thumbnail, thumbnailMeshFilter, gameObject, thumbnailPCRenderer, thumbnailReader.sequenceConfig, thumbnailTexture);
 
@@ -400,98 +412,4 @@ namespace BuildingVolumes.Streaming
                 SetupMaterials();
         }
     }
-
-
-#if UNITY_EDITOR
-
-    //Thumbnails are dynamically loaded each time the scene is opened, so that they 
-    //won't need to be saved in the scene, which might make the scene file huge
-    //This class helps to detect when a thumbnail load is neccessary
-    [InitializeOnLoad]
-    public class ThumbnailLoadHelper
-    {
-        static bool LoadThumbnailAfterEditorOpen = false;
-
-        static ThumbnailLoadHelper()
-        {
-            EditorSceneManager.sceneOpened += LoadThumbnailOnSceneOpen;
-            EditorSceneManager.sceneClosing += ClearThumbnailOnSceneClosed;
-            EditorApplication.playModeStateChanged += LoadThumbnailOnExitPlaymode;
-
-            //Trick to load thumbnail the first time, and only the first time, after Unity has started.
-            //We subscribe to EditorApplication.update instead of calling it directly, so that the 
-            //LoadThumbDelayed function only gets called after everything has been loaded
-            if (!SessionState.GetBool("GSSThumbLoadedFirstTime", false))
-            {
-                EditorApplication.update += LoadThumbDelayed;
-                LoadThumbnailAfterEditorOpen = true;
-            }
-
-            //After every recompile, the scripts get reset
-            //So we need to re-load the thumbnail after every recompile
-            LoadThumbnail();
-        }
-
-        static void LoadThumbnailOnSceneOpen(UnityEngine.SceneManagement.Scene scene1, OpenSceneMode mode)
-        {
-            LoadThumbnail();
-        }
-
-        static void LoadThumbnail()
-        {
-            if (EditorApplication.isPlayingOrWillChangePlaymode)
-                return;
-
-            GeometrySequencePlayer[] players = GameObject.FindObjectsOfType<GeometrySequencePlayer>();
-
-            foreach (GeometrySequencePlayer player in players)
-            {
-                if (player.GetAbsoluteSequencePath() != null)
-                {
-                    if (player.GetAbsoluteSequencePath().Length > 0)
-                    {
-                        player.ShowThumbnail(player.GetAbsoluteSequencePath());
-                    }
-                }
-            }
-        }
-
-        static void ClearThumbnailOnSceneClosed(UnityEngine.SceneManagement.Scene scene1, bool removingScene)
-        {
-            if (EditorApplication.isPlaying)
-                return;
-
-            ClearThumbnail();
-        }
-
-        static void LoadThumbnailOnExitPlaymode(PlayModeStateChange change)
-        {
-            if (change == PlayModeStateChange.EnteredEditMode)
-                LoadThumbnail();
-        }
-
-        static void ClearThumbnail()
-        {
-            GeometrySequencePlayer[] players = GameObject.FindObjectsOfType<GeometrySequencePlayer>();
-
-            foreach (GeometrySequencePlayer player in players)
-            {
-                player.ClearThumbnail();
-            }
-        }
-
-        static void LoadThumbDelayed()
-        {
-            if (LoadThumbnailAfterEditorOpen)
-            {
-                LoadThumbnailAfterEditorOpen = false;
-                EditorApplication.update -= LoadThumbDelayed;
-                LoadThumbnailOnSceneOpen(new UnityEngine.SceneManagement.Scene(), OpenSceneMode.Single);
-                SessionState.SetBool("GSSThumbLoadedFirstTime", true);
-            }
-        }
-    }
-
-#endif
-
 }
