@@ -54,6 +54,9 @@ namespace BuildingVolumes.Streaming
                     if (player.GetAbsoluteSequencePath().Length > 0)
                     {
                         player.ShowThumbnail(player.GetAbsoluteSequencePath());
+
+                        //Before a domain reload destroys the thumbnail data, we need to free the memory
+                        AssemblyReloadEvents.beforeAssemblyReload += ClearThumbnail;
                     }
                 }
             }

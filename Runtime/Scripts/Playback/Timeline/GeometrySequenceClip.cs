@@ -24,6 +24,9 @@ namespace BuildingVolumes.Streaming
             return playable;
         }
 
+        #region Thumbnail
+#if UNITY_EDITOR
+
         public void ShowThumbnail(string path)
         {
             if(stream != null)
@@ -35,6 +38,9 @@ namespace BuildingVolumes.Streaming
             if (stream != null)
                 stream.ClearEditorThumbnail();
         }
+
+#endif
+        #endregion
     }
 }
 

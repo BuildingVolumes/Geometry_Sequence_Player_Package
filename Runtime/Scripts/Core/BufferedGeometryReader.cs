@@ -537,7 +537,7 @@ namespace BuildingVolumes.Streaming
             if (format == SequenceConfiguration.TextureFormat.DDS)
                 headerSize = 128;
             if (format == SequenceConfiguration.TextureFormat.ASTC)
-                headerSize = 20;
+                headerSize = 16;
 
             BinaryReader textureReader = new BinaryReader(new FileStream(texturePath, FileMode.Open));
 

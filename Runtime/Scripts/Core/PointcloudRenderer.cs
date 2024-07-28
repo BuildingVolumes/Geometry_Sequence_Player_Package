@@ -1,6 +1,5 @@
 using Unity.Collections;
 using UnityEditor;
-using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.Rendering;
 
@@ -69,11 +68,8 @@ namespace BuildingVolumes.Streaming
         {
             if (!isDataSet || !enabled)
                 return;
-
-            //Use the Unity Editor Viewport camera if we are in the editor
 #if UNITY_EDITOR
-            if (Camera.current != null)
-                cam = Camera.current;
+            cam = Camera.current;
 #endif
             if(cam == null)
                 cam = Camera.main;
@@ -91,6 +87,9 @@ namespace BuildingVolumes.Streaming
             //For this we get the rotation matrix, that rotates from the source point to the camera
             cameraToWorldBuffer.SetData(new Matrix4x4[] { cam.cameraToWorldMatrix });
             worldToCameraBuffer.SetData(new Matrix4x4[] { cam.worldToCameraMatrix });
+
+            float[] output = new float[16];
+            cameraToWorldBuffer.GetData(output);
 
             computeShader.SetBuffer(0, matrixToSourceWorldID, toSourceWorldBuffer);
             computeShader.SetBuffer(0, matrixWorldToCameraID, worldToCameraBuffer);
@@ -184,10 +183,10 @@ namespace BuildingVolumes.Streaming
 
         #region RenderInEditor
 
+#if UNITY_EDITOR
         public void StartEditorLife()
         {
             SceneView.beforeSceneGui += RenderInEditor;
-            Debug.Log("Subscribed to update");
         }
 
         public void RenderInEditor(SceneView view)
@@ -200,8 +199,15 @@ namespace BuildingVolumes.Streaming
             SceneView.beforeSceneGui -= RenderInEditor;
             ReleaseLargeBuffers();
             ReleaseSmallBuffers();
-            Debug.Log("Unsubscribed from update");
         }
+
+        [ExecuteInEditMode]
+
+        private void OnDestroy()
+        {
+            EndEditorLife();
+        }
+#endif
 
         #endregion
     }

@@ -1,11 +1,8 @@
 using System;
 using System.Collections;
 using System.IO;
-using UnityEditor;
-using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.Events;
-using UnityEngine.SceneManagement;
 
 namespace BuildingVolumes.Streaming
 {
@@ -50,22 +47,6 @@ namespace BuildingVolumes.Streaming
                 if (stream == null)
                     stream = gameObject.AddComponent<GeometrySequenceStream>();
             }
-        }
-
-        public void ShowThumbnail(string pathToSequence)
-        {
-            if (stream == null)
-                stream = GetComponent<GeometrySequenceStream>();
-
-            stream.LoadEditorThumbnail(pathToSequence);
-        }
-
-        public void ClearThumbnail()
-        {
-            if (stream == null)
-                stream = GetComponent<GeometrySequenceStream>();
-
-            stream.ClearEditorThumbnail();
         }
 
         private void Update()
@@ -468,7 +449,25 @@ namespace BuildingVolumes.Streaming
 
         #endregion
 
+        #region Thumbnail
+#if UNITY_EDITOR
+        public void ShowThumbnail(string pathToSequence)
+        {
+            if (stream == null)
+                stream = GetComponent<GeometrySequenceStream>();
 
+            stream.LoadEditorThumbnail(pathToSequence);
+        }
+
+        public void ClearThumbnail()
+        {
+            if (stream == null)
+                stream = GetComponent<GeometrySequenceStream>();
+
+            stream.ClearEditorThumbnail();
+        }
+#endif
+#endregion
 
         #region Obsolete
 

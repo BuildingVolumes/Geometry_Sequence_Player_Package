@@ -1,11 +1,7 @@
 ﻿using UnityEngine;
 using System.IO;
-using Unity.Collections;
 using Unity.Jobs.LowLevel.Unsafe;
-using UnityEditor;
 using UnityEngine.Rendering;
-using System.Linq.Expressions;
-
 
 
 #if UNITY_EDITOR
@@ -95,12 +91,9 @@ namespace BuildingVolumes.Streaming
             //If we have a single texture in the sequence, we read it immidiatly
             if (bufferedReader.sequenceConfig.textureMode == SequenceConfiguration.TextureMode.Single)
             {
-                if (bufferedReader.frameBuffer[0].textureJobHandle != null)
-                {
                     bufferedReader.SetupFrameForReading(bufferedReader.frameBuffer[0], bufferedReader.sequenceConfig, 0);
                     bufferedReader.ScheduleTextureReadJob(bufferedReader.frameBuffer[0], bufferedReader.GetDeviceDependendentTexturePath(0));
                     ShowTextureData(bufferedReader.frameBuffer[0], texture);
-                }
             }
 
             targetFrameTimeMs = 1000f / (float)playbackFPS;
@@ -164,21 +157,14 @@ namespace BuildingVolumes.Streaming
 
 
         /// <summary>
-        /// Reads mesh data from a native array buffer and disposes of it right after 
+        /// Reads mesh data from a native array buffer
         /// </summary>
         /// <param name="frame"></param>
         void ShowGeometryData(Frame frame, MeshFilter meshFilter, GameObject streamObject, PointcloudRenderer pcRenderer, SequenceConfiguration config)
         {
             frame.geoJobHandle.Complete();
 
-            Vector3 offset;
-            if (streamObject == null)
-                offset = transform.position;
-            else
-                offset = streamObject.transform.position;
-
-            Bounds bounds = config.GetBounds();
-            meshFilter.sharedMesh.bounds = new Bounds(bounds.center + offset, bounds.size);
+            meshFilter.sharedMesh.bounds = config.GetBounds();
 
             if (config.geometryType == SequenceConfiguration.GeometryType.point)
             {
@@ -209,7 +195,6 @@ namespace BuildingVolumes.Streaming
         /// <param name="frame"></param>
         void ShowTextureData(Frame frame, Texture2D texture)
         {
-
             frame.textureJobHandle.Complete();
             texture.SetPixelData<byte>(frame.textureBufferRaw, 0);
             texture.Apply();
@@ -322,6 +307,44 @@ namespace BuildingVolumes.Streaming
                 thumbnailPCRenderer.SetPointSize(size);
         }
 
+       
+
+
+        void CleanupSequence()
+        {
+            if (bufferedReader != null)
+            {
+                bufferedReader.DisposeFrameBuffer(true);
+            }
+
+            CleanupMeshAndTexture();
+        }
+
+        void CleanupMeshAndTexture()
+        {
+            if (streamedMeshObject != null)
+                Destroy(streamedMeshObject);
+
+            if (texture != null)
+                Destroy(texture);
+        }
+
+        void OnDestroy()
+        {
+            CleanupSequence();
+            Debug.Log("Destroyed!");
+        }
+
+        private void Reset()
+        {
+            if (pointcloudMaterial == null && meshMaterial == null)
+                SetupMaterials();
+        }
+
+        #region Thumbnail
+
+#if UNITY_EDITOR
+
         /// <summary>
         /// Loads and shows a thumbnail of the clip that was just opened. Only shown in the editor
         /// </summary>
@@ -356,11 +379,9 @@ namespace BuildingVolumes.Streaming
 
 
                 ShowFrameData(thumbnail, thumbnailMeshFilter, gameObject, thumbnailPCRenderer, thumbnailReader.sequenceConfig, thumbnailTexture);
-
-                //Before a domain reload destroys the values set in this script, we need to free the memory
-                AssemblyReloadEvents.beforeAssemblyReload += ClearEditorThumbnail;
             }
         }
+
 
 
         /// <summary>
@@ -380,36 +401,8 @@ namespace BuildingVolumes.Streaming
             if (thumbnailTexture != null)
                 DestroyImmediate(thumbnailTexture);
         }
+#endif
+        #endregion
 
-
-        void CleanupSequence()
-        {
-            if (bufferedReader != null)
-            {
-                bufferedReader.DisposeFrameBuffer(true);
-            }
-
-            CleanupMeshAndTexture();
-        }
-
-        void CleanupMeshAndTexture()
-        {
-            if (streamedMeshObject != null)
-                Destroy(streamedMeshObject);
-
-            if (texture != null)
-                Destroy(texture);
-        }
-
-        void OnDestroy()
-        {
-            CleanupSequence();
-        }
-
-        private void Reset()
-        {
-            if (pointcloudMaterial == null && meshMaterial == null)
-                SetupMaterials();
-        }
     }
 }

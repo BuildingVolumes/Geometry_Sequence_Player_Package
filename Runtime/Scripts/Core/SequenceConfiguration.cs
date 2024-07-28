@@ -42,7 +42,7 @@ namespace BuildingVolumes.Streaming
 
             else
             {
-                Debug.LogError("Could not find sequence.json metadata file!");
+                Debug.LogError("Could not find sequence.json metadata file at: " + pathToFile);
                 return null;
             }
 
