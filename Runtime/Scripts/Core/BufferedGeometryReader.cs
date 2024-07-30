@@ -11,6 +11,7 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using static BuildingVolumes.Streaming.SequenceConfiguration;
 using System.ComponentModel;
+using Codice.CM.Client.Differences.Merge;
 
 
 namespace BuildingVolumes.Streaming
@@ -185,9 +186,9 @@ namespace BuildingVolumes.Streaming
             if (currentPlaybackFrame < 0 || currentPlaybackFrame > totalFrames)
                 return;
 
-            //Delete frames from buffer that are outside our current buffer range
-            //which keeps our buffer clean in case of skips or lags
-            //DeleteFramesOutsideOfBufferRange(currentPlaybackFrame);
+            //Mark frames from buffer that are outside our current buffer range
+            //as okay to be overwritten, which keeps our buffer moving forward in case of skips or lags
+            MarkFramesOutsideBufferRange(currentPlaybackFrame);
 
             //Find out which frames we need to buffer. The buffer is a ring
             //buffer, so that when the playback loops, the whole clip doesn't need
@@ -196,7 +197,6 @@ namespace BuildingVolumes.Streaming
 
             for (int i = 0; i < bufferSize; i++)
             {
-
                 if (framesToBuffer.Count >= totalFrames)
                     continue;
 
@@ -210,6 +210,8 @@ namespace BuildingVolumes.Streaming
 
                 currentPlaybackFrame++;
             }
+
+            int bufferedFrames = 0;
 
             for (int i = 0; i < frameBuffer.Length; i++)
             {
@@ -226,8 +228,11 @@ namespace BuildingVolumes.Streaming
                             ScheduleTextureReadJob(frameBuffer[i], GetDeviceDependendentTexturePath(newPlaybackIndex));
 
                         framesToBuffer.Remove(newPlaybackIndex);
+
+                        bufferedFrames++;
                     }
                 }
+
             }
 
             JobHandle.ScheduleBatchedJobs();
@@ -269,6 +274,46 @@ namespace BuildingVolumes.Streaming
                 frame.textureBufferRaw = new NativeArray<byte>(GetDeviceDependentTextureSize(config), Allocator.Persistent);
             else
                 frame.textureBufferRaw = new NativeArray<byte>(1, Allocator.Persistent);
+        }
+
+        /// <summary>
+        /// Marks frames that are either in the past of current Frame index,
+        /// or too far in the future (the whole buffer size away from the current Frame Index)
+        /// Should be regularily called to keep the buffer going
+        /// </summary>
+        /// <param name="currentFrameIndex">The currently shown/played back frame</param>
+        public void MarkFramesOutsideBufferRange(int currentFrameIndex)
+        {
+            //We want to treat the buffer as a ring buffer, so that when we're looping,
+            //the playback doesn't stutter. This means if the current Frame index is near
+            //the end of the buffer, our buffer range extends to the beginning again
+
+            int minFrame = currentFrameIndex;
+            int maxframe = currentFrameIndex + bufferSize;
+            if (maxframe >= totalFrames)
+                maxframe -= (totalFrames - 1);
+
+            for (int i = 0; i < frameBuffer.Length; i++)
+            {
+                bool dispose = true;
+                int playbackIndex = frameBuffer[i].playbackIndex;
+
+                if (minFrame < maxframe)
+                {
+                    if (playbackIndex >= minFrame && playbackIndex < maxframe)
+                        dispose = false;
+                }
+
+                else
+                {
+                    if (playbackIndex >= maxframe || playbackIndex < maxframe)
+                        dispose = false;
+                }
+
+                if (dispose)
+                    frameBuffer[i].wasConsumed = true;
+
+            }
         }
 
         /// <summary>

@@ -111,20 +111,22 @@ namespace BuildingVolumes.Streaming
 
             int targetFrameIndex = Mathf.RoundToInt(playbackTimeInMs / targetFrameTimeMs);
 
+
             //Fill the buffer with new data from the disk, and delete unused frames (In case of lag/skip)
             bufferedReader.BufferFrames(targetFrameIndex);
+
 
             if (targetFrameIndex != currentFrameIndex && targetFrameIndex < bufferedReader.totalFrames)
             {
                 //Check if our desired frame is inside the frame buffer and loaded, so that we can use it
                 int frameBufferIndex = bufferedReader.GetBufferIndexForLoadedPlaybackIndex(targetFrameIndex);
 
+
                 //Is the frame inside the buffer and fully loaded?
                 if (frameBufferIndex > -1)
                 {
                     //The frame has been loaded and we'll show the model (& texture)
                     ShowFrameData(bufferedReader.frameBuffer[frameBufferIndex], streamedMeshFilter, streamedMeshObject, pointcloudRenderer, bufferedReader.sequenceConfig, texture);
-                    bufferedReader.frameBuffer[frameBufferIndex].wasConsumed = true;
 
                     float decay = 0.95f;
                     if (elapsedMsSinceLastFrame > 0)
@@ -153,6 +155,8 @@ namespace BuildingVolumes.Streaming
 
             if (config.textureMode == SequenceConfiguration.TextureMode.PerFrame)
                 ShowTextureData(frame, texture);
+
+            frame.wasConsumed = true;
         }
 
 
@@ -168,7 +172,7 @@ namespace BuildingVolumes.Streaming
 
             if (config.geometryType == SequenceConfiguration.GeometryType.point)
             {
-                pcRenderer.SetPointcloudData(frame.vertexBufferRaw, frame.sequenceConfiguration.verticeCounts[frame.playbackIndex], meshFilter.transform);
+                pcRenderer.SetPointcloudData(frame.vertexBufferRaw, frame.sequenceConfiguration.verticeCounts[frame.playbackIndex]);
             }
 
             else
@@ -187,6 +191,7 @@ namespace BuildingVolumes.Streaming
                 meshFilter.sharedMesh.SetSubMesh(0, new SubMeshDescriptor(0, frame.sequenceConfiguration.indiceCounts[frame.playbackIndex]), MeshUpdateFlags.DontRecalculateBounds);
                 meshFilter.sharedMesh.RecalculateNormals();
             }
+
         }
 
         /// <summary>
@@ -332,7 +337,6 @@ namespace BuildingVolumes.Streaming
         void OnDestroy()
         {
             CleanupSequence();
-            Debug.Log("Destroyed!");
         }
 
         private void Reset()

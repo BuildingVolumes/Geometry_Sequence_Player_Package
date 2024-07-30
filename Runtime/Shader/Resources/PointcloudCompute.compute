@@ -8,9 +8,7 @@ RWByteAddressBuffer _PointSourceBuffer;
 RWByteAddressBuffer _VertexBuffer;
 RWByteAddressBuffer _IndexBuffer;
 
-StructuredBuffer<float4x4> _toSourceWorld;
-StructuredBuffer<float4x4> _CameraToWorld;
-StructuredBuffer<float4x4> _WorldToCamera;
+StructuredBuffer<float4x4> _RotateToCamera;
 
 float _PointScale;
 int _PointCount;
@@ -46,32 +44,43 @@ uint GetColorFromPointSourceBuffer(int id)
     return _PointSourceBuffer.Load(pointIndex);
 }
 
-_PointQuad CreateQuad(float3 position, int id, float pointscale)
-{
-    _PointQuad outQuad = { float3(1, 1, 0), float3(-1, 1, 0), float3(-1, -1, 0), float3(1, -1, 0), uint3(0, 0, 0), uint3(0, 0, 0)};
-    
-    //Create our quad in screen space, to that it is always aligned to the camera
-    float ps = _PointScale;
-    float3 pSS = mul(_WorldToCamera[0], float4(position, 1.0)).xyz; //position in Screen Space
+_PointQuad RotateQuad(_PointQuad quad, float4x4 rotationMat)
+{;
+    quad.vertex1 = mul(rotationMat, float4(quad.vertex1, 1.0)).xyz;
+    quad.vertex2 = mul(rotationMat, float4(quad.vertex2, 1.0)).xyz;
+    quad.vertex3 = mul(rotationMat, float4(quad.vertex3, 1.0)).xyz;
+    quad.vertex4 = mul(rotationMat, float4(quad.vertex4, 1.0)).xyz;
+    return quad;
+}
 
-    float3 posLeftUpScreen = float3(pSS.x + ps, pSS.y + ps, pSS.z);
-    float3 posRightUpScreen = float3(pSS.x - ps, pSS.y + ps, pSS.z);
-    float3 posRightDownScreen = float3(pSS.x - ps, pSS.y - ps, pSS.z);
-    float3 posLeftDownScreen = float3(pSS.x + ps, pSS.y - ps, pSS.z);
-        
-    //Convert it back into world space
-    outQuad.vertex1 = mul(_CameraToWorld[0], float4(posLeftUpScreen, 1.0)).xyz;
-    outQuad.vertex2 = mul(_CameraToWorld[0], float4(posRightUpScreen, 1.0)).xyz;
-    outQuad.vertex3 = mul(_CameraToWorld[0], float4(posRightDownScreen, 1.0)).xyz;
-    outQuad.vertex4 = mul(_CameraToWorld[0], float4(posLeftDownScreen, 1.0)).xyz;
+_PointQuad TranslateQuad(_PointQuad quad, float3 position)
+{
+    quad.vertex1 = quad.vertex1 + position;
+    quad.vertex2 = quad.vertex2 + position;
+    quad.vertex3 = quad.vertex3 + position;
+    quad.vertex4 = quad.vertex4 + position;
+    return quad;
+}
+
+_PointQuad CreateQuad(float3 pos, int id, float scale)
+{
+    //Create a quad
+    _PointQuad outQuad = { float3(scale, scale, 0), float3(-scale, scale, 0), float3(-scale, -scale, 0), float3(scale, -scale, 0), uint3(0, 0, 0), uint3(0, 0, 0)};;
+    
+    //First rotate the point to face the camera
+    outQuad = RotateQuad(outQuad, _RotateToCamera[0]);
+    
+    //Then position it according to source array
+    outQuad = TranslateQuad(outQuad, pos);
        
-    ////Create our triangles. We indice from the top right corner in an anti-clockwise direction
+    ////Create our faces. We indice from the top right corner in an anti-clockwise direction
     uint i = id * 4;
     outQuad.triangle1 = uint3(2 + i, 1 + i, 0 + i);
     outQuad.triangle2 = uint3(0 + i, 3 + i, 2 + i);
     
     return outQuad;
 }
+
 
 void StoreQuad(_PointQuad quad, uint color, int id)
 {
@@ -118,9 +127,7 @@ void CreatePointcloud(uint3 id : SV_DispatchThreadID)
     float3 position = GetPositionFromPointSourceBuffer(id.x);
     uint color = GetColorFromPointSourceBuffer(id.x);
     
-    float3 positionWorld = mul(_toSourceWorld[0], float4(position, 1.0)).xyz;
-    
-    _PointQuad quad = CreateQuad(positionWorld, id.x, _PointScale);
+    _PointQuad quad = CreateQuad(position, id.x, _PointScale);
     
     StoreQuad(quad, color, id.x);
 }

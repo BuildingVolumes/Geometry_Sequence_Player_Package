@@ -1,6 +1,7 @@
 using Unity.Collections;
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.Profiling;
 using UnityEngine.Rendering;
 
 
@@ -14,26 +15,21 @@ namespace BuildingVolumes.Streaming
         GraphicsBuffer vertexBuffer;
         GraphicsBuffer indexBuffer;
 
-        GraphicsBuffer toSourceWorldBuffer;
-        GraphicsBuffer cameraToWorldBuffer;
-        GraphicsBuffer worldToCameraBuffer;
+        GraphicsBuffer rotateToCameraMat;
 
-        NativeArray<byte> pointSourceArray;
         int sourcePointCount;
-        Transform pointSourceTransform;
         bool isDataSet;
 
         MeshFilter outputMeshFilter;
         Mesh outputMesh;
         Camera cam;
 
+        public float angle;
 
         static readonly int vertexBufferID = Shader.PropertyToID("_VertexBuffer");
         static readonly int pointSourceID = Shader.PropertyToID("_PointSourceBuffer");
         static readonly int indexBufferID = Shader.PropertyToID("_IndexBuffer");
-        static readonly int matrixToSourceWorldID = Shader.PropertyToID("_toSourceWorld");
-        static readonly int matrixCameraToWorldID = Shader.PropertyToID("_CameraToWorld");
-        static readonly int matrixWorldToCameraID = Shader.PropertyToID("_WorldToCamera");
+        static readonly int rotateToCameraID = Shader.PropertyToID("_RotateToCamera");
         static readonly int pointScaleID = Shader.PropertyToID("_PointScale");
         static readonly int pointCountID = Shader.PropertyToID("_PointCount");
 
@@ -43,24 +39,23 @@ namespace BuildingVolumes.Streaming
             Render();
         }
 
-        public void SetPointcloudData(NativeArray<byte> pointSource, int sourceCount, Transform sourceTransform)
+        public void SetPointcloudData(NativeArray<byte> pointSource, int sourceCount)
         {
             if (!enabled)
                 return;
 
-            pointSourceArray = pointSource;
             sourcePointCount = sourceCount;
-            pointSourceTransform = sourceTransform;
 
             // Get the vertex buffer of the source point mesh, and set it up
             // as a buffer parameter to a compute shader. This will act as a
             //position and color source for the rendered points
-            pointSourceBuffer.SetData<byte>(pointSourceArray);           
+            pointSourceBuffer.SetData<byte>(pointSource);           
 
             computeShader.SetBuffer(0, pointSourceID, pointSourceBuffer);
             computeShader.SetBuffer(0, vertexBufferID, vertexBuffer);
             computeShader.SetBuffer(0, indexBufferID, indexBuffer);
             computeShader.SetInt(pointCountID, sourcePointCount);
+
             isDataSet = true;           
         }
 
@@ -68,33 +63,25 @@ namespace BuildingVolumes.Streaming
         {
             if (!isDataSet || !enabled)
                 return;
+
 #if UNITY_EDITOR
             cam = Camera.current;
 #endif
             if(cam == null)
                 cam = Camera.main;
 
-            //This point renderer will not always be at the same position as the Point Source object.
-            //To handle this, we first convert the coordinates of this point renderer back into local space.
-            //From the local space, we then convert them back into the world space of the point source, so that
-            //the rendered points are always spatially locked to the point source object.
-            Matrix4x4 rendererWorldToLocal = transform.worldToLocalMatrix;
-            Matrix4x4 sourceLocalToWorld = pointSourceTransform.localToWorldMatrix;
-            Matrix4x4 toSourceWorld = rendererWorldToLocal * sourceLocalToWorld;
-            toSourceWorldBuffer.SetData(new Matrix4x4[] { toSourceWorld });
 
-            //We also need to rotate the vertices, so that they always face the camera.
-            //For this we get the rotation matrix, that rotates from the source point to the camera
-            cameraToWorldBuffer.SetData(new Matrix4x4[] { cam.cameraToWorldMatrix });
-            worldToCameraBuffer.SetData(new Matrix4x4[] { cam.worldToCameraMatrix });
-
-            float[] output = new float[16];
-            cameraToWorldBuffer.GetData(output);
-
-            computeShader.SetBuffer(0, matrixToSourceWorldID, toSourceWorldBuffer);
-            computeShader.SetBuffer(0, matrixWorldToCameraID, worldToCameraBuffer);
-            computeShader.SetBuffer(0, matrixCameraToWorldID, cameraToWorldBuffer);
-            computeShader.SetFloat(pointScaleID, pointScale);
+            Profiler.BeginSample("RotationCalc");
+            //Rotation that lets the points face the camera
+            Quaternion fromObjectToCamera = Quaternion.Inverse(transform.rotation) * (Quaternion.LookRotation(cam.transform.forward, cam.transform.up));
+            Matrix4x4 rotateToCamMat = Matrix4x4.Rotate(fromObjectToCamera);
+            Profiler.EndSample();
+            Profiler.BeginSample("SetData");
+            rotateToCameraMat.SetData(new Matrix4x4[] { rotateToCamMat});
+            Profiler.EndSample();
+            Profiler.BeginSample("SetBuffer");
+            computeShader.SetBuffer(0, rotateToCameraID, rotateToCameraMat);
+            Profiler.EndSample();
 
             int groupSize = Mathf.CeilToInt(sourcePointCount / 128f);
             computeShader.Dispatch(0, groupSize, 1, 1);
@@ -110,15 +97,13 @@ namespace BuildingVolumes.Streaming
             SceneView.RepaintAll();
 #endif
         }
-
+         
         public int SetupPointcloudRenderer(int maxPointCount, MeshFilter renderToMeshFilter)
         {
             ReleaseLargeBuffers();
             ReleaseSmallBuffers();
 
-            toSourceWorldBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, 1, 4 * 4 * 4);
-            cameraToWorldBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, 1, 4 * 4 * 4);
-            worldToCameraBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, 1, 4 * 4 * 4);
+            rotateToCameraMat = new GraphicsBuffer(GraphicsBuffer.Target.Structured, 1, 4 * 4 * 4);
 
             if(computeShader == null)
                 computeShader = Resources.Load("PointcloudCompute") as ComputeShader;
@@ -173,12 +158,8 @@ namespace BuildingVolumes.Streaming
 
         void ReleaseSmallBuffers()
         {
-            if(toSourceWorldBuffer != null)
-                toSourceWorldBuffer.Release();
-            if(cameraToWorldBuffer != null)
-                cameraToWorldBuffer.Release();
-            if (worldToCameraBuffer != null)
-                worldToCameraBuffer.Release();
+            if(rotateToCameraMat != null)
+                rotateToCameraMat.Release();
         }
 
         #region RenderInEditor
