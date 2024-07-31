@@ -10,8 +10,9 @@ using System.Text;
 using System.Linq;
 using System.Text.RegularExpressions;
 using static BuildingVolumes.Streaming.SequenceConfiguration;
-using System.ComponentModel;
-using Codice.CM.Client.Differences.Merge;
+using Unity.IO.LowLevel.Unsafe;
+using Unity.Collections.LowLevel.Unsafe;
+using System.Threading;
 
 
 namespace BuildingVolumes.Streaming
@@ -19,6 +20,7 @@ namespace BuildingVolumes.Streaming
 
     public class Frame
     {
+        public NativeArray<byte> readBuffer;
         public NativeArray<byte> vertexBufferRaw;
         public NativeArray<int> indiceBufferRaw;
         public NativeArray<byte> textureBufferRaw;
@@ -30,6 +32,7 @@ namespace BuildingVolumes.Streaming
         public ReadTextureJob textureJob;
         public JobHandle textureJobHandle;
 
+        public int readBufferSize;
         public int playbackIndex;
         public bool wasConsumed;
 
@@ -180,6 +183,23 @@ namespace BuildingVolumes.Streaming
         /// </summary>
         public void BufferFrames(int currentPlaybackFrame)
         {
+            int framesLoadedAhead = 0;
+            int framesInPast = 0;
+
+            for (int i = 0; frameBuffer.Length > i; i++)
+            {
+                if (frameBuffer[i].geoJobHandle.IsCompleted)
+                {
+                    if (frameBuffer[i].playbackIndex > currentPlaybackFrame)
+                        framesLoadedAhead++;
+
+                    if (frameBuffer[i].playbackIndex <= framesInPast)
+                    {
+                        framesInPast++;
+                    }
+                }
+            }
+
             if (!buffering)
                 return;
 
@@ -211,8 +231,6 @@ namespace BuildingVolumes.Streaming
                 currentPlaybackFrame++;
             }
 
-            int bufferedFrames = 0;
-
             for (int i = 0; i < frameBuffer.Length; i++)
             {
                 //Check if the buffer is ready to load the next frame 
@@ -228,8 +246,6 @@ namespace BuildingVolumes.Streaming
                             ScheduleTextureReadJob(frameBuffer[i], GetDeviceDependendentTexturePath(newPlaybackIndex));
 
                         framesToBuffer.Remove(newPlaybackIndex);
-
-                        bufferedFrames++;
                     }
                 }
 
@@ -250,6 +266,15 @@ namespace BuildingVolumes.Streaming
             VertexAttributeDescriptor[] layout = new VertexAttributeDescriptor[0];
 
             frame.sequenceConfiguration.geometryType = config.geometryType;
+            
+            frame.geoJob = new ReadGeometryJob();
+            int readbufferSize = config.maxVertexCount * 3 * 4;
+            readbufferSize += config.hasUVs ? config.maxVertexCount * 2 * 4 : 0;
+            readbufferSize += config.maxIndiceCount * 4;
+            frame.readBuffer = new NativeArray<byte>(readbufferSize, Allocator.Persistent);
+            frame.textureJob = new ReadTextureJob();
+
+
 
             //Allocate every frame with the highest amount of vertices and indices being used in this sequence. 
             //This way, we can re-use the meshArrays, instead of re-allocating them each frame
@@ -444,16 +469,23 @@ namespace BuildingVolumes.Streaming
         /// <returns></returns>
         public void ScheduleGeometryReadJob(Frame frame, string plyPath)
         {
-            frame.geoJob = new ReadGeometryJob();
             frame.geoJob.pathCharArray = new NativeArray<byte>(Encoding.UTF8.GetBytes(plyPath), Allocator.Persistent);
+            frame.geoJob.readCmd = new NativeArray<ReadCommand>(1, Allocator.Persistent);
             frame.geoJob.geoType = frame.sequenceConfiguration.geometryType;
             frame.geoJob.hasUVs = frame.sequenceConfiguration.hasUVs;
             frame.geoJob.headerSize = frame.sequenceConfiguration.headerSizes[frame.playbackIndex];
             frame.geoJob.vertexCount = frame.sequenceConfiguration.verticeCounts[frame.playbackIndex];
             frame.geoJob.indiceCount = frame.sequenceConfiguration.indiceCounts[frame.playbackIndex];
             frame.geoJob.maxIndiceCount = frame.sequenceConfiguration.maxIndiceCount;
+            frame.geoJob.readBuffer = frame.readBuffer;
             frame.geoJob.vertexBuffer = frame.vertexBufferRaw;
             frame.geoJob.indiceBuffer = frame.indiceBufferRaw;
+
+            int readbufferSize = frame.geoJob.vertexCount * 3 * 4;
+            readbufferSize += frame.geoJob.hasUVs ? frame.geoJob.vertexCount * 2 * 4 : 0;
+            readbufferSize += frame.geoJob.indiceCount * 4;
+            frame.geoJob.readBufferCount = readbufferSize;
+
             frame.geoJobHandle = frame.geoJob.Schedule(frame.geoJobHandle);
         }
 
@@ -494,6 +526,7 @@ namespace BuildingVolumes.Streaming
                     frameBuffer[i].geoJobHandle.Complete();
                     frameBuffer[i].vertexBufferRaw.Dispose();
                     frameBuffer[i].indiceBufferRaw.Dispose();
+                    frameBuffer[i].readBuffer.Dispose();
 
                     frameBuffer[i].textureJobHandle.Complete();
                     frameBuffer[i].textureBufferRaw.Dispose();
@@ -506,6 +539,7 @@ namespace BuildingVolumes.Streaming
 
     public struct ReadGeometryJob : IJob
     {
+        public NativeArray<byte> readBuffer;
         public NativeArray<byte> vertexBuffer;
         public NativeArray<int> indiceBuffer;
         public bool hasUVs;
@@ -514,10 +548,14 @@ namespace BuildingVolumes.Streaming
         public int vertexCount;
         public int indiceCount;
         public int maxIndiceCount;
+        public int readBufferCount;
         public GeometryType geoType;
 
         [DeallocateOnJobCompletion]
         public NativeArray<byte> pathCharArray;
+
+        [DeallocateOnJobCompletion]
+        public NativeArray<ReadCommand> readCmd;
 
         public void Execute()
         {
@@ -528,29 +566,40 @@ namespace BuildingVolumes.Streaming
             pathCharArray.CopyTo(pathCharBuffer);
             string path = Encoding.UTF8.GetString(pathCharBuffer);
 
-            //We read all bytes into a buffer at once, much quicker than doing it in many shorter reads.
-            //This buffer only contains the raw mesh data without the header
-            BinaryReader reader = new BinaryReader(new FileStream(path, FileMode.Open));
-            reader.BaseStream.Position = headerSize;
-            byte[] byteBuffer = reader.ReadBytes((int)(reader.BaseStream.Length - headerSize));
-            reader.Close();
-            reader.Dispose();
+            ReadCommand cmd;
+            ReadHandle readHandle;
+            cmd.Offset = headerSize;
+            cmd.Size = readBufferCount;
+            unsafe { cmd.Buffer = NativeArrayUnsafeUtility.GetUnsafePtr<byte>(readBuffer); }
+            readCmd[0] = cmd;
+            unsafe { readHandle = AsyncReadManager.Read(path, (ReadCommand*)readCmd.GetUnsafePtr(), 1); }
+
+            if (readHandle.IsValid())
+            {
+                while (readHandle.Status == ReadStatus.InProgress)
+                {
+                    Thread.Sleep(1);
+                }
+
+            }
+
+            readHandle.Dispose();
 
             if (geoType == GeometryType.point)
             {
-                NativeArray<byte>.Copy(byteBuffer, vertexBuffer, byteBuffer.Length);
+                NativeArray<byte>.Copy(readBuffer, vertexBuffer, readBuffer.Length); //Unessesary copy step
             }
 
             else
             {
                 int vertexBufferSize = hasUVs ? vertexCount * 5 * 4 : vertexCount * 3 * 4;
-                NativeArray<byte>.Copy(byteBuffer, vertexBuffer, vertexBufferSize);
+                NativeArray<byte>.Copy(readBuffer, vertexBuffer, vertexBufferSize);
                 //Reading the index is a bit more tricky because each index line contains the number of indices in that line, which we dont want to include
                 int[] indicesRaw = new int[indiceCount];
                 int sizeOfIndexLine = sizeof(byte) + sizeof(int) * 3;
                 for (int i = 0; i < indiceCount / 3; i++)
                 {
-                    Buffer.BlockCopy(byteBuffer, vertexBufferSize + sizeOfIndexLine * i + sizeof(byte), indicesRaw, i * 3 * sizeof(int), 3 * sizeof(int));
+                    //Buffer.BlockCopy(readBuffer, vertexBufferSize + sizeOfIndexLine * i + sizeof(byte), indicesRaw, i * 3 * sizeof(int), 3 * sizeof(int));
                 }
 
                 NativeArray<int>.Copy(indicesRaw, indiceBuffer, indicesRaw.Length);

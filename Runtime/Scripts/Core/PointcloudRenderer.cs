@@ -45,17 +45,10 @@ namespace BuildingVolumes.Streaming
                 return;
 
             sourcePointCount = sourceCount;
-
-            // Get the vertex buffer of the source point mesh, and set it up
-            // as a buffer parameter to a compute shader. This will act as a
-            //position and color source for the rendered points
-            pointSourceBuffer.SetData<byte>(pointSource);           
-
-            computeShader.SetBuffer(0, pointSourceID, pointSourceBuffer);
-            computeShader.SetBuffer(0, vertexBufferID, vertexBuffer);
-            computeShader.SetBuffer(0, indexBufferID, indexBuffer);
+            NativeArray<byte> pointdataGPU = pointSourceBuffer.LockBufferForWrite<byte>(0, pointSourceBuffer.count); //Locking buffer is faster than GraphicsBuffer.SetData;
+            pointSource.CopyTo(pointdataGPU);
+            pointSourceBuffer.UnlockBufferAfterWrite<byte>(pointSource.Length);
             computeShader.SetInt(pointCountID, sourcePointCount);
-
             isDataSet = true;           
         }
 
@@ -67,21 +60,13 @@ namespace BuildingVolumes.Streaming
 #if UNITY_EDITOR
             cam = Camera.current;
 #endif
-            if(cam == null)
+            if (cam == null)
                 cam = Camera.main;
 
-
-            Profiler.BeginSample("RotationCalc");
             //Rotation that lets the points face the camera
             Quaternion fromObjectToCamera = Quaternion.Inverse(transform.rotation) * (Quaternion.LookRotation(cam.transform.forward, cam.transform.up));
             Matrix4x4 rotateToCamMat = Matrix4x4.Rotate(fromObjectToCamera);
-            Profiler.EndSample();
-            Profiler.BeginSample("SetData");
-            rotateToCameraMat.SetData(new Matrix4x4[] { rotateToCamMat});
-            Profiler.EndSample();
-            Profiler.BeginSample("SetBuffer");
-            computeShader.SetBuffer(0, rotateToCameraID, rotateToCameraMat);
-            Profiler.EndSample();
+            rotateToCameraMat.SetData(new Matrix4x4[] { rotateToCamMat });
 
             int groupSize = Mathf.CeilToInt(sourcePointCount / 128f);
             computeShader.Dispatch(0, groupSize, 1, 1);
@@ -92,9 +77,12 @@ namespace BuildingVolumes.Streaming
             pointScale = size;
             computeShader.SetFloat(pointScaleID, pointScale);
 
-#if UNITY_EDITOR
-            Render();
-            SceneView.RepaintAll();
+#if UNITY_EDITOR 
+            if (!Application.isPlaying)
+            {
+                Render();
+                SceneView.RepaintAll();
+            }
 #endif
         }
          
@@ -104,8 +92,9 @@ namespace BuildingVolumes.Streaming
             ReleaseSmallBuffers();
 
             rotateToCameraMat = new GraphicsBuffer(GraphicsBuffer.Target.Structured, 1, 4 * 4 * 4);
+            pointSourceBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Raw, GraphicsBuffer.UsageFlags.LockBufferForWrite,  maxPointCount * 4 * 4, 4 * 4);
 
-            if(computeShader == null)
+            if (computeShader == null)
                 computeShader = Resources.Load("PointcloudCompute") as ComputeShader;
 
             outputMeshFilter = renderToMeshFilter;
@@ -129,7 +118,11 @@ namespace BuildingVolumes.Streaming
             vertexBuffer = outputMesh.GetVertexBuffer(0);
             indexBuffer = outputMesh.GetIndexBuffer();
 
-            pointSourceBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Raw, maxPointCount * 4 * 4, 4 * 4);
+            computeShader.SetBuffer(0, vertexBufferID, vertexBuffer);
+            computeShader.SetBuffer(0, indexBufferID, indexBuffer);
+            computeShader.SetBuffer(0, rotateToCameraID, rotateToCameraMat);
+            computeShader.SetBuffer(0, pointSourceID, pointSourceBuffer);
+
 
 #if UNITY_EDITOR
             if (!Application.isPlaying)

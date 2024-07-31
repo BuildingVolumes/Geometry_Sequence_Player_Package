@@ -4,7 +4,7 @@
 
 
 //Compute Buffer
-RWByteAddressBuffer _PointSourceBuffer;
+ByteAddressBuffer _PointSourceBuffer;
 RWByteAddressBuffer _VertexBuffer;
 RWByteAddressBuffer _IndexBuffer;
 
