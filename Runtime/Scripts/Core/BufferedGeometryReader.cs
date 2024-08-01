@@ -13,6 +13,7 @@ using static BuildingVolumes.Streaming.SequenceConfiguration;
 using Unity.IO.LowLevel.Unsafe;
 using Unity.Collections.LowLevel.Unsafe;
 using System.Threading;
+using CodiceApp.Gravatar;
 
 
 namespace BuildingVolumes.Streaming
@@ -20,9 +21,9 @@ namespace BuildingVolumes.Streaming
 
     public class Frame
     {
-        public NativeArray<byte> readBuffer;
         public NativeArray<byte> vertexBufferRaw;
-        public NativeArray<int> indiceBufferRaw;
+        public NativeArray<byte> indiceBufferRaw;
+        public NativeArray<byte> indiceIntermediateBuffer;
         public NativeArray<byte> textureBufferRaw;
 
         public SequenceConfiguration sequenceConfiguration;
@@ -266,29 +267,25 @@ namespace BuildingVolumes.Streaming
             VertexAttributeDescriptor[] layout = new VertexAttributeDescriptor[0];
 
             frame.sequenceConfiguration.geometryType = config.geometryType;
-            
+
             frame.geoJob = new ReadGeometryJob();
-            int readbufferSize = config.maxVertexCount * 3 * 4;
-            readbufferSize += config.hasUVs ? config.maxVertexCount * 2 * 4 : 0;
-            readbufferSize += config.maxIndiceCount * 4;
-            frame.readBuffer = new NativeArray<byte>(readbufferSize, Allocator.Persistent);
             frame.textureJob = new ReadTextureJob();
-
-
 
             //Allocate every frame with the highest amount of vertices and indices being used in this sequence. 
             //This way, we can re-use the meshArrays, instead of re-allocating them each frame
             if (config.geometryType == GeometryType.point)
             {
                 frame.vertexBufferRaw = new NativeArray<byte>(config.maxVertexCount * 4 * 4, Allocator.Persistent);
-                frame.indiceBufferRaw = new NativeArray<int>(1, Allocator.Persistent);
+                frame.indiceBufferRaw = new NativeArray<byte>(1, Allocator.Persistent);
+                frame.indiceIntermediateBuffer = new NativeArray<byte>(1, Allocator.Persistent);
             }
 
             else
             {
                 int vertexSizeBytes = sequenceConfig.hasUVs ? config.maxVertexCount * 5 * 4 : config.maxVertexCount * 3 * 4;
                 frame.vertexBufferRaw = new NativeArray<byte>(vertexSizeBytes, Allocator.Persistent);
-                frame.indiceBufferRaw = new NativeArray<int>(config.maxIndiceCount, Allocator.Persistent);
+                frame.indiceBufferRaw = new NativeArray<byte>(config.maxIndiceCount * 4, Allocator.Persistent);
+                frame.indiceIntermediateBuffer = new NativeArray<byte>((config.maxIndiceCount * 4) + config.maxIndiceCount, Allocator.Persistent);
             }
 
             frame.sequenceConfiguration.textureMode = config.textureMode;
@@ -477,15 +474,9 @@ namespace BuildingVolumes.Streaming
             frame.geoJob.vertexCount = frame.sequenceConfiguration.verticeCounts[frame.playbackIndex];
             frame.geoJob.indiceCount = frame.sequenceConfiguration.indiceCounts[frame.playbackIndex];
             frame.geoJob.maxIndiceCount = frame.sequenceConfiguration.maxIndiceCount;
-            frame.geoJob.readBuffer = frame.readBuffer;
             frame.geoJob.vertexBuffer = frame.vertexBufferRaw;
             frame.geoJob.indiceBuffer = frame.indiceBufferRaw;
-
-            int readbufferSize = frame.geoJob.vertexCount * 3 * 4;
-            readbufferSize += frame.geoJob.hasUVs ? frame.geoJob.vertexCount * 2 * 4 : 0;
-            readbufferSize += frame.geoJob.indiceCount * 4;
-            frame.geoJob.readBufferCount = readbufferSize;
-
+            frame.geoJob.indiceIntermediateBuffer = frame.indiceIntermediateBuffer;
             frame.geoJobHandle = frame.geoJob.Schedule(frame.geoJobHandle);
         }
 
@@ -503,8 +494,9 @@ namespace BuildingVolumes.Streaming
                 return;
             }
 
-            frame.textureJob = new ReadTextureJob();
+            frame.textureJob.readCmd = new NativeArray<ReadCommand>(1, Allocator.Persistent);
             frame.textureJob.format = GetDeviceDependentTextureFormat();
+            frame.textureJob.textureSize = GetDeviceDependentTextureSize(frame.sequenceConfiguration);
             frame.textureJob.textureRawData = frame.textureBufferRaw;
             frame.textureJob.texturePathCharArray = new NativeArray<byte>(Encoding.UTF8.GetBytes(texturePath), Allocator.Persistent);
             frame.textureJobHandle = frame.textureJob.Schedule(frame.textureJobHandle);
@@ -526,7 +518,7 @@ namespace BuildingVolumes.Streaming
                     frameBuffer[i].geoJobHandle.Complete();
                     frameBuffer[i].vertexBufferRaw.Dispose();
                     frameBuffer[i].indiceBufferRaw.Dispose();
-                    frameBuffer[i].readBuffer.Dispose();
+                    frameBuffer[i].indiceIntermediateBuffer.Dispose();
 
                     frameBuffer[i].textureJobHandle.Complete();
                     frameBuffer[i].textureBufferRaw.Dispose();
@@ -539,16 +531,15 @@ namespace BuildingVolumes.Streaming
 
     public struct ReadGeometryJob : IJob
     {
-        public NativeArray<byte> readBuffer;
         public NativeArray<byte> vertexBuffer;
-        public NativeArray<int> indiceBuffer;
+        public NativeArray<byte> indiceIntermediateBuffer;
+        public NativeArray<byte> indiceBuffer;
         public bool hasUVs;
         public bool readFinished;
         public int headerSize;
         public int vertexCount;
         public int indiceCount;
         public int maxIndiceCount;
-        public int readBufferCount;
         public GeometryType geoType;
 
         [DeallocateOnJobCompletion]
@@ -566,43 +557,59 @@ namespace BuildingVolumes.Streaming
             pathCharArray.CopyTo(pathCharBuffer);
             string path = Encoding.UTF8.GetString(pathCharBuffer);
 
-            ReadCommand cmd;
-            ReadHandle readHandle;
-            cmd.Offset = headerSize;
-            cmd.Size = readBufferCount;
-            unsafe { cmd.Buffer = NativeArrayUnsafeUtility.GetUnsafePtr<byte>(readBuffer); }
-            readCmd[0] = cmd;
-            unsafe { readHandle = AsyncReadManager.Read(path, (ReadCommand*)readCmd.GetUnsafePtr(), 1); }
+            ReadCommand readVerticesCmd;
+            ReadHandle readVerticesHandle;
+            readVerticesCmd.Offset = headerSize;
+            unsafe { readVerticesCmd.Buffer = NativeArrayUnsafeUtility.GetUnsafePtr<byte>(vertexBuffer); }
 
-            if (readHandle.IsValid())
+            if (geoType == GeometryType.point)
+                readVerticesCmd.Size = vertexCount * 4 * 4;
+            else
+                readVerticesCmd.Size = hasUVs ? vertexCount * 5 * 4 : vertexCount * 3 * 4;
+
+            readCmd[0] = readVerticesCmd;
+
+            unsafe { readVerticesHandle = AsyncReadManager.Read(path, (ReadCommand*)readCmd.GetUnsafePtr(), 1); }
+
+            if (readVerticesHandle.IsValid())
             {
-                while (readHandle.Status == ReadStatus.InProgress)
+                while (readVerticesHandle.Status == ReadStatus.InProgress)
                 {
                     Thread.Sleep(1);
                 }
-
             }
 
-            readHandle.Dispose();
+            readVerticesHandle.Dispose();
 
-            if (geoType == GeometryType.point)
+            if (geoType != GeometryType.point)
             {
-                NativeArray<byte>.Copy(readBuffer, vertexBuffer, readBuffer.Length); //Unessesary copy step
-            }
-
-            else
-            {
-                int vertexBufferSize = hasUVs ? vertexCount * 5 * 4 : vertexCount * 3 * 4;
-                NativeArray<byte>.Copy(readBuffer, vertexBuffer, vertexBufferSize);
                 //Reading the index is a bit more tricky because each index line contains the number of indices in that line, which we dont want to include
-                int[] indicesRaw = new int[indiceCount];
-                int sizeOfIndexLine = sizeof(byte) + sizeof(int) * 3;
-                for (int i = 0; i < indiceCount / 3; i++)
+                //So we first read it into a temporary array, and then copy only the indices
+
+                ReadCommand readIndicesCmd;
+                ReadHandle readIndicesHandle;
+                readIndicesCmd.Offset = headerSize + readVerticesCmd.Size;
+                readIndicesCmd.Size = (indiceCount * 4) + indiceCount;
+                unsafe { readIndicesCmd.Buffer = NativeArrayUnsafeUtility.GetUnsafePtr<byte>(indiceIntermediateBuffer); }
+                readCmd[0] = readIndicesCmd;
+                unsafe { readIndicesHandle = AsyncReadManager.Read(path, (ReadCommand*)readCmd.GetUnsafePtr(), 1); }
+
+                if (readIndicesHandle.IsValid())
                 {
-                    //Buffer.BlockCopy(readBuffer, vertexBufferSize + sizeOfIndexLine * i + sizeof(byte), indicesRaw, i * 3 * sizeof(int), 3 * sizeof(int));
+                    while (readIndicesHandle.Status == ReadStatus.InProgress)
+                    {
+                        Thread.Sleep(1);
+                    }
                 }
 
-                NativeArray<int>.Copy(indicesRaw, indiceBuffer, indicesRaw.Length);
+                readIndicesHandle.Dispose();
+
+                int indiceTriplet = 3 * 4;
+
+                for (int i = 0; i < indiceCount / 3; i++)
+                {
+                    NativeArray<byte>.Copy(indiceIntermediateBuffer, (i * (indiceTriplet + 1)) + 1, indiceBuffer, i * indiceTriplet, indiceTriplet);
+                }
             }
 
             readFinished = true;
@@ -612,11 +619,15 @@ namespace BuildingVolumes.Streaming
     public struct ReadTextureJob : IJob
     {
         public NativeArray<byte> textureRawData;
+        public int textureSize;
         public bool readFinished;
         public SequenceConfiguration.TextureFormat format;
 
         [DeallocateOnJobCompletion]
         public NativeArray<byte> texturePathCharArray;
+
+        [DeallocateOnJobCompletion]
+        public NativeArray<ReadCommand> readCmd;
 
         public void Execute()
         {
@@ -633,12 +644,26 @@ namespace BuildingVolumes.Streaming
             if (format == SequenceConfiguration.TextureFormat.ASTC)
                 headerSize = 16;
 
-            BinaryReader textureReader = new BinaryReader(new FileStream(texturePath, FileMode.Open));
+            ReadCommand readTextureCmd;
+            ReadHandle readTextureHandle;
+            readTextureCmd.Offset = headerSize;
+            readTextureCmd.Size = textureSize;
+            unsafe { readTextureCmd.Buffer = NativeArrayUnsafeUtility.GetUnsafePtr<byte>(textureRawData); }
+                       
 
-            //As GPUs can access .DDS data directly, we can simply take the binary blob and upload it to the GPU
-            textureReader.BaseStream.Position = headerSize; //Skip the DDS header
-            textureRawData.CopyFrom(textureReader.ReadBytes((int)textureReader.BaseStream.Length - headerSize));
-            textureReader.Close();
+            readCmd[0] = readTextureCmd;
+
+            unsafe { readTextureHandle = AsyncReadManager.Read(texturePath, (ReadCommand*)readCmd.GetUnsafePtr(), 1); }
+
+            if (readTextureHandle.IsValid())
+            {
+                while (readTextureHandle.Status == ReadStatus.InProgress)
+                {
+                    Thread.Sleep(1);
+                }
+            }
+
+            readTextureHandle.Dispose();
 
             readFinished = true;
         }

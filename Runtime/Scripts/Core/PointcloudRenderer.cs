@@ -109,8 +109,9 @@ namespace BuildingVolumes.Streaming
 
             VertexAttributeDescriptor vp = new VertexAttributeDescriptor(VertexAttribute.Position, VertexAttributeFormat.Float32, 3);
             VertexAttributeDescriptor vc = new VertexAttributeDescriptor(VertexAttribute.Color, VertexAttributeFormat.UNorm8, 4);
+            VertexAttributeDescriptor vt = new VertexAttributeDescriptor(VertexAttribute.TexCoord0, VertexAttributeFormat.Float32, 2);
 
-            outputMesh.SetVertexBufferParams(maxPointCount * 4, vp, vc);
+            outputMesh.SetVertexBufferParams(maxPointCount * 4, vp, vc, vt);
             outputMesh.SetIndexBufferParams(maxPointCount * 6, IndexFormat.UInt32);
 
             outputMesh.SetSubMesh(0, new SubMeshDescriptor(0, maxPointCount * 6), MeshUpdateFlags.DontRecalculateBounds);
@@ -165,7 +166,10 @@ namespace BuildingVolumes.Streaming
 
         public void RenderInEditor(SceneView view)
         {
-            Render();
+            if (this == null)
+                EndEditorLife();
+            else
+                Render();
         }
 
         public void EndEditorLife()

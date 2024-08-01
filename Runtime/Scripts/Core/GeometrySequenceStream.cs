@@ -21,9 +21,12 @@ namespace BuildingVolumes.Streaming
         public bool useAllThreads = true;
         public int threadCount = 4;
 
-        public Material pointcloudMaterial;
+        public Material pointcloudMaterialQuads;
+        public Material pointcloudMaterialCircles;
+        public Material pointcloudMaterialSplats;
         public Material meshMaterial;
         public float pointSize;
+        public PointType pointType;
 
         public PointcloudRenderer pointcloudRenderer;
 
@@ -51,8 +54,8 @@ namespace BuildingVolumes.Streaming
         [HideInInspector]
         public Texture2D texture;
 
-
         public enum PathType { AbsolutePath, RelativeToDataPath, RelativeToPersistentDataPath, RelativeToStreamingAssets };
+        public enum PointType { Quads, Circles, SplatsExperimental};
 
         private void Awake()
         {
@@ -187,7 +190,7 @@ namespace BuildingVolumes.Streaming
 
                 meshFilter.sharedMesh.SetIndexBufferParams(config.maxIndiceCount, IndexFormat.UInt32);
                 meshFilter.sharedMesh.SetVertexBufferData<byte>(frame.vertexBufferRaw, 0, 0, frame.vertexBufferRaw.Length);
-                meshFilter.sharedMesh.SetIndexBufferData<int>(frame.indiceBufferRaw, 0, 0, frame.sequenceConfiguration.indiceCounts[frame.playbackIndex]);
+                meshFilter.sharedMesh.SetIndexBufferData<byte>(frame.indiceBufferRaw, 0, 0, frame.indiceBufferRaw.Length);
                 meshFilter.sharedMesh.SetSubMesh(0, new SubMeshDescriptor(0, frame.sequenceConfiguration.indiceCounts[frame.playbackIndex]), MeshUpdateFlags.DontRecalculateBounds);
                 meshFilter.sharedMesh.RecalculateNormals();
             }
@@ -195,7 +198,7 @@ namespace BuildingVolumes.Streaming
         }
 
         /// <summary>
-        /// Reads texture data from a frame buffer. Doesn't dispose of the data, you need to do that manually!
+        /// Uploads texture data from a frame buffer to GPU
         /// </summary>
         /// <param name="frame"></param>
         void ShowTextureData(Frame frame, Texture2D texture)
@@ -260,7 +263,7 @@ namespace BuildingVolumes.Streaming
                 return false;
 
             if (pc)
-                renderer.sharedMaterial = pointcloudMaterial; //new Material?
+                SetPointcloudType(pointType, renderer);
             else
                 renderer.sharedMaterial = meshMaterial;
 
@@ -276,8 +279,14 @@ namespace BuildingVolumes.Streaming
         public bool SetupMaterials()
         {
             //Fill up material slots with default materials
-            if (pointcloudMaterial == null)
-                pointcloudMaterial = Resources.Load("GS_VertexColorMat") as Material;
+            if (pointcloudMaterialQuads == null)
+                pointcloudMaterialQuads = Resources.Load("GS_Quads") as Material;
+
+            if (pointcloudMaterialCircles == null)
+                pointcloudMaterialCircles = Resources.Load("GS_Circles") as Material;
+
+            if (pointcloudMaterialSplats == null)
+                pointcloudMaterialSplats = Resources.Load("GS_Splats") as Material;
 
             if (meshMaterial == null)
                 meshMaterial = Resources.Load("GS_MeshMaterial_Unlit") as Material;
@@ -293,13 +302,46 @@ namespace BuildingVolumes.Streaming
                 return false;
             }
 
-            if (pointcloudMaterial == null)
+            if (pointcloudMaterialQuads == null)
             {
-                UnityEngine.Debug.LogError("Pointcloud default material could not be loaded!");
+                UnityEngine.Debug.LogError("Pointcloud Quads material could not be loaded!");
                 return false;
             }
 
+            if (pointcloudMaterialCircles == null)
+            {
+                UnityEngine.Debug.LogError("Pointcloud Circles material could not be loaded!");
+                return false;
+            }
+
+            if (pointcloudMaterialSplats == null)
+            {
+                UnityEngine.Debug.LogError("Pointcloud Splats material could not be loaded!");
+                return false;
+            }
+
+
             return true;
+        }
+
+        public void SetPointcloudType(PointType type, MeshRenderer renderer)
+        {
+            pointType = type;
+
+            switch (type)
+            {
+                case PointType.Quads:
+                    renderer.sharedMaterial = pointcloudMaterialQuads;
+                    break;
+                case PointType.Circles:
+                    renderer.sharedMaterial = pointcloudMaterialCircles;
+                    break;
+                case PointType.SplatsExperimental:
+                    renderer.sharedMaterial = pointcloudMaterialSplats;
+                    break;
+                default:
+                    break;
+            }
         }
 
         public void SetPointSize(float size)
@@ -311,8 +353,16 @@ namespace BuildingVolumes.Streaming
             if (thumbnailPCRenderer != null)
                 thumbnailPCRenderer.SetPointSize(size);
         }
+        
+        public MeshRenderer GetActiveRenderer()
+        {
+            if (streamedMeshRenderer != null)
+                return streamedMeshRenderer;
+            if (thumbnailMeshRenderer != null)
+                return thumbnailMeshRenderer;
 
-       
+            else return null;
+        }
 
 
         void CleanupSequence()
@@ -334,15 +384,18 @@ namespace BuildingVolumes.Streaming
                 Destroy(texture);
         }
 
+        [ExecuteInEditMode]
         void OnDestroy()
         {
-            CleanupSequence();
+            if(!Application.isPlaying)
+                ClearEditorThumbnail();
+            else
+                CleanupSequence();
         }
 
         private void Reset()
         {
-            if (pointcloudMaterial == null && meshMaterial == null)
-                SetupMaterials();
+            SetupMaterials();
         }
 
         #region Thumbnail
@@ -383,6 +436,14 @@ namespace BuildingVolumes.Streaming
 
 
                 ShowFrameData(thumbnail, thumbnailMeshFilter, gameObject, thumbnailPCRenderer, thumbnailReader.sequenceConfig, thumbnailTexture);
+            }
+        }
+
+        public void ShowThumbnailTexture()
+        {
+            if(thumbnailReader.sequenceConfig.textureMode != SequenceConfiguration.TextureMode.None)
+            {
+                thumbnailMeshRenderer.sharedMaterial.mainTexture = thumbnailTexture;
             }
         }
 

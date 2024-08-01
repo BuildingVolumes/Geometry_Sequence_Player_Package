@@ -459,6 +459,14 @@ namespace BuildingVolumes.Streaming
             stream.LoadEditorThumbnail(pathToSequence);
         }
 
+        public void ShowThumbnailTexture()
+        {
+            if (stream == null)
+                stream = GetComponent<GeometrySequenceStream>();
+
+            stream.ShowThumbnailTexture();
+        }
+
         public void ClearThumbnail()
         {
             if (stream == null)

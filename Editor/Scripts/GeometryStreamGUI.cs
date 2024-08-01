@@ -17,6 +17,7 @@ namespace BuildingVolumes.Streaming
         SerializedProperty pointcloudMaterial;
         SerializedProperty meshMaterial;
         SerializedProperty pointSize;
+        SerializedProperty pointType;
 
         SerializedProperty bufferSize;
         SerializedProperty useAllThreads;
@@ -35,9 +36,9 @@ namespace BuildingVolumes.Streaming
         {
             parentTransform = serializedObject.FindProperty("parentTransform");
             
-            pointcloudMaterial = serializedObject.FindProperty("pointcloudMaterial");
             meshMaterial = serializedObject.FindProperty("meshMaterial");
             pointSize = serializedObject.FindProperty("pointSize");
+            pointType = serializedObject.FindProperty("pointType");
 
             bufferSize = serializedObject.FindProperty("bufferSize");
             useAllThreads = serializedObject.FindProperty("useAllThreads");
@@ -61,14 +62,25 @@ namespace BuildingVolumes.Streaming
 
             EditorGUILayout.PropertyField(parentTransform);
 
-            EditorGUILayout.PropertyField(pointcloudMaterial);
             EditorGUILayout.PropertyField(meshMaterial);
 
             EditorGUILayout.BeginHorizontal();
             EditorGUILayout.LabelField("Point size");
-            float newPointSize = EditorGUILayout.Slider(pointSize.floatValue, 0.001f, 0.03f);
+            float newPointSize = EditorGUILayout.Slider(pointSize.floatValue, 0.001f, 0.1f);
             if(!Mathf.Approximately(newPointSize, pointSize.floatValue))
                 stream.SetPointSize(newPointSize);
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField("Point type");
+            EditorGUI.BeginChangeCheck();
+            GeometrySequenceStream.PointType newType = (GeometrySequenceStream.PointType)EditorGUILayout.EnumPopup(stream.pointType);
+            if (EditorGUI.EndChangeCheck())
+            {
+                MeshRenderer activeRend = stream.GetActiveRenderer();
+                if (activeRend != null)
+                    stream.SetPointcloudType(newType, activeRend);
+            }
             EditorGUILayout.EndHorizontal();
 
             showBufferOptions = EditorGUILayout.Foldout(showBufferOptions, "Buffer Options");

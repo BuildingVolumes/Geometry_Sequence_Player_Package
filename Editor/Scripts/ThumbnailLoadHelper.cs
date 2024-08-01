@@ -19,6 +19,7 @@ namespace BuildingVolumes.Streaming
         {
             EditorSceneManager.sceneOpened += LoadThumbnailOnSceneOpen;
             EditorSceneManager.sceneClosing += ClearThumbnailOnSceneClosed;
+            EditorSceneManager.sceneSaved += ShowTexture;
             EditorApplication.playModeStateChanged += LoadThumbnailOnExitPlaymode;
 
             //Trick to load thumbnail the first time, and only the first time, after Unity has started.
@@ -59,6 +60,19 @@ namespace BuildingVolumes.Streaming
                         AssemblyReloadEvents.beforeAssemblyReload += ClearThumbnail;
                     }
                 }
+            }
+        }
+
+        static void ShowTexture(UnityEngine.SceneManagement.Scene scene)
+        {
+            if (EditorApplication.isPlayingOrWillChangePlaymode)
+                return;
+
+            GeometrySequencePlayer[] players = GameObject.FindObjectsOfType<GeometrySequencePlayer>();
+
+            foreach (GeometrySequencePlayer player in players)
+            {
+                player.ShowThumbnailTexture();
             }
         }
 

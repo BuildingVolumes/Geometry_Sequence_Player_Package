@@ -1,4 +1,4 @@
-Shader "Unlit/GS_UnlitVertexColor"
+Shader "Unlit/GS_UnlitSplatExperimental"
 {
     Properties
     {
@@ -6,8 +6,12 @@ Shader "Unlit/GS_UnlitVertexColor"
     }
     SubShader
     {
-        Tags { "RenderType"="Opaque" }
+        Tags { "RenderType"="Transparent" "Queue"="Transparent" }
+        
         LOD 100
+
+        ZWrite Off
+        Blend SrcAlpha OneMinusSrcAlpha
 
         Pass
         {
@@ -23,6 +27,7 @@ Shader "Unlit/GS_UnlitVertexColor"
             {
                 float4 vertex : POSITION;
                 fixed4 color : COLOR;
+                float2 texcoord : TEXCOORD0;
             };
 
             struct v2f
@@ -30,6 +35,7 @@ Shader "Unlit/GS_UnlitVertexColor"
                 UNITY_FOG_COORDS(1)
                 float4 vertex : SV_POSITION;
                 fixed4 color : COLOR;
+                float2 texcoord : TEXCOORD0;
             };
 
             v2f vert (appdata v)
@@ -37,18 +43,32 @@ Shader "Unlit/GS_UnlitVertexColor"
                 v2f o;
                 o.vertex = UnityObjectToClipPos(v.vertex);
                 o.color = v.color;
+                o.texcoord = v.texcoord;
                 UNITY_TRANSFER_FOG(o,o.vertex);
                 return o;
             }
 
+            float splat(float2 uv) 
+            {
+                float2 center = float2(0, 0);
+	            float d = length(center - uv) - 0.5;
+                float t = clamp(d * 2, 0, 1);
+	            return 1.0 - t;
+            }
+
             fixed4 frag (v2f i) : SV_Target
             {
-                // sample the texture
-                fixed4 col = i.color;
+                fixed4 col = i.color;                
+                float a = splat(i.texcoord);
+                col.a = a;
+                
                 // apply fog
                 UNITY_APPLY_FOG(i.fogCoord, col);
                 return col;
             }
+
+        
+
             ENDCG
         }
     }
