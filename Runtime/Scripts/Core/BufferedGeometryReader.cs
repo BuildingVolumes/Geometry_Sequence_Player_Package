@@ -13,8 +13,6 @@ using static BuildingVolumes.Streaming.SequenceConfiguration;
 using Unity.IO.LowLevel.Unsafe;
 using Unity.Collections.LowLevel.Unsafe;
 using System.Threading;
-using CodiceApp.Gravatar;
-
 
 namespace BuildingVolumes.Streaming
 {
@@ -264,10 +262,7 @@ namespace BuildingVolumes.Streaming
 
         void AllocateFrame(Frame frame, SequenceConfiguration config)
         {
-            VertexAttributeDescriptor[] layout = new VertexAttributeDescriptor[0];
-
             frame.sequenceConfiguration.geometryType = config.geometryType;
-
             frame.geoJob = new ReadGeometryJob();
             frame.textureJob = new ReadTextureJob();
 

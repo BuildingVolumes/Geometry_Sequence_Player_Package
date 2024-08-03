@@ -49,7 +49,7 @@ namespace BuildingVolumes.Streaming
             pointSource.CopyTo(pointdataGPU);
             pointSourceBuffer.UnlockBufferAfterWrite<byte>(pointSource.Length);
             computeShader.SetInt(pointCountID, sourcePointCount);
-            isDataSet = true;           
+            isDataSet = true;
         }
 
         public void Render()
@@ -70,6 +70,7 @@ namespace BuildingVolumes.Streaming
 
             int groupSize = Mathf.CeilToInt(sourcePointCount / 128f);
             computeShader.Dispatch(0, groupSize, 1, 1);
+
         }
 
         public void SetPointSize(float size)
@@ -86,7 +87,7 @@ namespace BuildingVolumes.Streaming
 #endif
         }
          
-        public int SetupPointcloudRenderer(int maxPointCount, MeshFilter renderToMeshFilter)
+        public int SetupPointcloudRenderer(int maxPointCount, MeshFilter renderToMeshFilter, float pointSize)
         {
             ReleaseLargeBuffers();
             ReleaseSmallBuffers();
@@ -123,6 +124,7 @@ namespace BuildingVolumes.Streaming
             computeShader.SetBuffer(0, indexBufferID, indexBuffer);
             computeShader.SetBuffer(0, rotateToCameraID, rotateToCameraMat);
             computeShader.SetBuffer(0, pointSourceID, pointSourceBuffer);
+            SetPointSize(pointSize);
 
 
 #if UNITY_EDITOR

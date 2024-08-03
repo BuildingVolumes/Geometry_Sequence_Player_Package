@@ -67,7 +67,7 @@ _PointQuad TranslateQuad(_PointQuad quad, float3 position)
 }
 
 _PointQuad CreateQuad(float3 pos, int id, float scale)
-{
+{    
     //Create a quad
     _PointQuad outQuad = { float3(scale, scale, 0), float3(-scale, scale, 0), float3(-scale, -scale, 0), float3(scale, -scale, 0), uint3(0, 0, 0), uint3(0, 0, 0), float2(0, 0), float2(0, 0), float2(0, 0), float2(0,0) };
     

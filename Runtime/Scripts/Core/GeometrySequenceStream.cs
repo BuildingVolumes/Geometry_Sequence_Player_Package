@@ -67,6 +67,8 @@ namespace BuildingVolumes.Streaming
             if (GetComponent<MeshRenderer>())
                 GetComponent<MeshRenderer>().enabled = false;
 
+            SetupMaterials();
+
 #if !UNITY_EDITOR && !UNITY_STANDALONE_WIN && !UNITY_STANDALONE_OSX && !UNITY_STANDALONE_LINUX && !UNITY_IOS && !UNITY_VISIONOS && !UNITY_ANDROID && !UNITY_TVOS
             Debug.LogError("Platform not supported by Geometry Sequence Streamer! Playback will probably fail");
 #endif
@@ -129,7 +131,7 @@ namespace BuildingVolumes.Streaming
                 if (frameBufferIndex > -1)
                 {
                     //The frame has been loaded and we'll show the model (& texture)
-                    ShowFrameData(bufferedReader.frameBuffer[frameBufferIndex], streamedMeshFilter, streamedMeshObject, pointcloudRenderer, bufferedReader.sequenceConfig, texture);
+                    ShowFrameData(bufferedReader.frameBuffer[frameBufferIndex], streamedMeshFilter, pointcloudRenderer, bufferedReader.sequenceConfig, texture);
 
                     float decay = 0.95f;
                     if (elapsedMsSinceLastFrame > 0)
@@ -152,9 +154,9 @@ namespace BuildingVolumes.Streaming
         /// Display mesh and texture data from a frame buffer
         /// </summary>
         /// <param name="frame"></param>
-        public void ShowFrameData(Frame frame, MeshFilter meshFilter, GameObject streamObject, PointcloudRenderer pcRenderer, SequenceConfiguration config, Texture2D texture)
+        public void ShowFrameData(Frame frame, MeshFilter meshFilter, PointcloudRenderer pcRenderer, SequenceConfiguration config, Texture2D texture)
         {
-            ShowGeometryData(frame, meshFilter, streamObject, pcRenderer, config);
+            ShowGeometryData(frame, meshFilter, pcRenderer, config);
 
             if (config.textureMode == SequenceConfiguration.TextureMode.PerFrame)
                 ShowTextureData(frame, texture);
@@ -167,7 +169,7 @@ namespace BuildingVolumes.Streaming
         /// Reads mesh data from a native array buffer
         /// </summary>
         /// <param name="frame"></param>
-        void ShowGeometryData(Frame frame, MeshFilter meshFilter, GameObject streamObject, PointcloudRenderer pcRenderer, SequenceConfiguration config)
+        void ShowGeometryData(Frame frame, MeshFilter meshFilter, PointcloudRenderer pcRenderer, SequenceConfiguration config)
         {
             frame.geoJobHandle.Complete();
 
@@ -263,15 +265,15 @@ namespace BuildingVolumes.Streaming
                 return false;
 
             if (pc)
-                SetPointcloudType(pointType, renderer);
+                SetPointcloudMaterial(pointType, renderer);
             else
-                renderer.sharedMaterial = meshMaterial;
+                renderer.sharedMaterial = new Material(meshMaterial);
 
             if (config.textureMode != SequenceConfiguration.TextureMode.None)
                 renderer.sharedMaterial.SetTexture("_MainTex", texture);
 
             if (pc)
-                pcRenderer.SetupPointcloudRenderer(config.maxVertexCount, meshfilter);
+                pcRenderer.SetupPointcloudRenderer(config.maxVertexCount, meshfilter, pointSize);
 
             return true;
         }
@@ -280,13 +282,14 @@ namespace BuildingVolumes.Streaming
         {
             //Fill up material slots with default materials
             if (pointcloudMaterialQuads == null)
-                pointcloudMaterialQuads = Resources.Load("GS_Quads") as Material;
+                //pointcloudMaterialQuads = Resources.Load("GS_Quads") as Material;
+                pointcloudMaterialQuads = new Material(Resources.Load("GS_UnlitQuad") as Shader);
 
             if (pointcloudMaterialCircles == null)
                 pointcloudMaterialCircles = Resources.Load("GS_Circles") as Material;
 
             if (pointcloudMaterialSplats == null)
-                pointcloudMaterialSplats = Resources.Load("GS_Splats") as Material;
+                pointcloudMaterialSplats = Resources.Load("GS_SplatsExperimental") as Material;
 
             if (meshMaterial == null)
                 meshMaterial = Resources.Load("GS_MeshMaterial_Unlit") as Material;
@@ -324,7 +327,7 @@ namespace BuildingVolumes.Streaming
             return true;
         }
 
-        public void SetPointcloudType(PointType type, MeshRenderer renderer)
+        public void SetPointcloudMaterial(PointType type, MeshRenderer renderer)
         {
             pointType = type;
 
@@ -344,14 +347,12 @@ namespace BuildingVolumes.Streaming
             }
         }
 
-        public void SetPointSize(float size)
+        public void SetPointSize(float pointSize)
         {
-            pointSize = size;
-
-            if (pointcloudRenderer != null)
-                pointcloudRenderer.SetPointSize(size);
+            if(pointcloudRenderer != null)
+                pointcloudRenderer.SetPointSize(pointSize);
             if (thumbnailPCRenderer != null)
-                thumbnailPCRenderer.SetPointSize(size);
+                thumbnailPCRenderer.SetPointSize(pointSize);
         }
         
         public MeshRenderer GetActiveRenderer()
@@ -387,10 +388,14 @@ namespace BuildingVolumes.Streaming
         [ExecuteInEditMode]
         void OnDestroy()
         {
-            if(!Application.isPlaying)
+#if UNITY_EDITOR
+            if (!Application.isPlaying)
+            {
                 ClearEditorThumbnail();
-            else
-                CleanupSequence();
+                return; 
+            }
+#endif
+            CleanupSequence();
         }
 
         private void Reset()
@@ -434,20 +439,9 @@ namespace BuildingVolumes.Streaming
                     ShowTextureData(thumbnail, thumbnailTexture);
                 }
 
-
-                ShowFrameData(thumbnail, thumbnailMeshFilter, gameObject, thumbnailPCRenderer, thumbnailReader.sequenceConfig, thumbnailTexture);
+                ShowFrameData(thumbnail, thumbnailMeshFilter, thumbnailPCRenderer, thumbnailReader.sequenceConfig, thumbnailTexture);
             }
         }
-
-        public void ShowThumbnailTexture()
-        {
-            if(thumbnailReader.sequenceConfig.textureMode != SequenceConfiguration.TextureMode.None)
-            {
-                thumbnailMeshRenderer.sharedMaterial.mainTexture = thumbnailTexture;
-            }
-        }
-
-
 
         /// <summary>
         /// Removes the shown Thumbnail

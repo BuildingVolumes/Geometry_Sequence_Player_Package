@@ -66,9 +66,10 @@ namespace BuildingVolumes.Streaming
 
             EditorGUILayout.BeginHorizontal();
             EditorGUILayout.LabelField("Point size");
-            float newPointSize = EditorGUILayout.Slider(pointSize.floatValue, 0.001f, 0.1f);
-            if(!Mathf.Approximately(newPointSize, pointSize.floatValue))
-                stream.SetPointSize(newPointSize);
+            EditorGUI.BeginChangeCheck();
+            EditorGUILayout.PropertyField(pointSize);
+            if(EditorGUI.EndChangeCheck())
+                stream.SetPointSize(pointSize.floatValue);
             EditorGUILayout.EndHorizontal();
 
             EditorGUILayout.BeginHorizontal();
@@ -79,7 +80,7 @@ namespace BuildingVolumes.Streaming
             {
                 MeshRenderer activeRend = stream.GetActiveRenderer();
                 if (activeRend != null)
-                    stream.SetPointcloudType(newType, activeRend);
+                    stream.SetPointcloudMaterial(newType, activeRend);
             }
             EditorGUILayout.EndHorizontal();
 
