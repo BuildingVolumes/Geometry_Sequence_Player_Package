@@ -30,8 +30,6 @@ namespace BuildingVolumes.Streaming
                 LoadThumbnailAfterEditorOpen = true;
             }
 
-            Debug.Log("Pre");
-
             //After every recompile, the scripts get reset
             //So we need to re-load the thumbnail after every recompile
             LoadThumbnail();

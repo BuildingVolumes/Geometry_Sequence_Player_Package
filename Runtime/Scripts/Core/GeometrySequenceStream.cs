@@ -261,8 +261,11 @@ namespace BuildingVolumes.Streaming
                     pcRenderer.hideFlags = HideFlags.DontSave | HideFlags.HideInInspector;
             }
 
+            SetupMaterials();
+
             if (!CheckMaterials())
                 return false;
+           
 
             if (pc)
                 SetPointcloudMaterial(pointType, renderer);
