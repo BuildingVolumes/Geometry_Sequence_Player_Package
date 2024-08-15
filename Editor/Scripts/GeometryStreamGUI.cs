@@ -12,10 +12,10 @@ namespace BuildingVolumes.Streaming
     {
         GeometrySequenceStream stream;
 
-        SerializedProperty parentTransform;
-
         SerializedProperty pointcloudMaterial;
         SerializedProperty meshMaterial;
+        SerializedProperty materialSlots;
+        SerializedProperty customMaterialSlots;
         SerializedProperty pointSize;
         SerializedProperty pointType;
 
@@ -31,12 +31,13 @@ namespace BuildingVolumes.Streaming
 
         bool showInfo;
         bool showBufferOptions;
+        bool showMaterialSlots;
 
         private void OnEnable()
-        {
-            parentTransform = serializedObject.FindProperty("parentTransform");
-            
+        {            
             meshMaterial = serializedObject.FindProperty("meshMaterial");
+            materialSlots = serializedObject.FindProperty("materialSlots");
+            customMaterialSlots = serializedObject.FindProperty("customMaterialSlots");
             pointSize = serializedObject.FindProperty("pointSize");
             pointType = serializedObject.FindProperty("pointType");
 
@@ -60,20 +61,16 @@ namespace BuildingVolumes.Streaming
         {
             serializedObject.Update();
 
-            EditorGUILayout.PropertyField(parentTransform);
 
-            EditorGUILayout.PropertyField(meshMaterial);
+            GUILayout.Label("Pointcloud Settings", EditorStyles.boldLabel);
 
-            EditorGUILayout.BeginHorizontal();
-            EditorGUILayout.LabelField("Point size");
             EditorGUI.BeginChangeCheck();
             EditorGUILayout.PropertyField(pointSize);
             if(EditorGUI.EndChangeCheck())
                 stream.SetPointSize(pointSize.floatValue);
-            EditorGUILayout.EndHorizontal();
 
             EditorGUILayout.BeginHorizontal();
-            EditorGUILayout.LabelField("Point type");
+            EditorGUILayout.LabelField("Point Type");
             EditorGUI.BeginChangeCheck();
             GeometrySequenceStream.PointType newType = (GeometrySequenceStream.PointType)EditorGUILayout.EnumPopup(stream.pointType);
             if (EditorGUI.EndChangeCheck())
@@ -84,12 +81,28 @@ namespace BuildingVolumes.Streaming
             }
             EditorGUILayout.EndHorizontal();
 
+            GUILayout.Space(10);
+
+            GUILayout.Label("Mesh Settings", EditorStyles.boldLabel);
+            
+            EditorGUILayout.PropertyField(meshMaterial);
+            showMaterialSlots = EditorGUILayout.Foldout(showMaterialSlots, "Material Slots");
+            if (showMaterialSlots) 
+            {
+                EditorGUILayout.PropertyField(materialSlots, new GUIContent("Apply to texture slots: "));
+                EditorGUILayout.PropertyField(customMaterialSlots, new GUIContent("Custom texture slots"));
+            }
+
+
             showBufferOptions = EditorGUILayout.Foldout(showBufferOptions, "Buffer Options");
             if (showBufferOptions)
             {
                 EditorGUILayout.PropertyField(bufferSize);
                 EditorGUILayout.PropertyField(useAllThreads);
+                if (useAllThreads.boolValue)
+                    GUI.enabled = false;
                 EditorGUILayout.PropertyField(threadCount);
+                GUI.enabled = true;
             }
 
             showInfo = EditorGUILayout.Foldout(showInfo, "Frame Info");

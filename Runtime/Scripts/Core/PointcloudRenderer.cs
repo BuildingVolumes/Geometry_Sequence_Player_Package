@@ -63,6 +63,12 @@ namespace BuildingVolumes.Streaming
             if (cam == null)
                 cam = Camera.main;
 
+            if(cam == null)
+            {
+                Debug.LogError("Could not find main camera. Please tag one camera as Main Camera for the Pointcloud renderer to work");
+                return;
+            }
+
             //Rotation that lets the points face the camera
             Quaternion fromObjectToCamera = Quaternion.Inverse(transform.rotation) * (Quaternion.LookRotation(cam.transform.forward, cam.transform.up));
             Matrix4x4 rotateToCamMat = Matrix4x4.Rotate(fromObjectToCamera);

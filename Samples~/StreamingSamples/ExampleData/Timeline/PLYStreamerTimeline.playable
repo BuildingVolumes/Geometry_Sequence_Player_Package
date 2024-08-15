@@ -13,7 +13,7 @@ MonoBehaviour:
   m_Name: GeometrySequenceClip
   m_EditorClassIdentifier: 
   stream: {fileID: 0}
-  relativePath: Samples\Geometry Sequence Streaming\1.0.3\Streaming Samples\ExampleData\Twisty_Box
+  relativePath: Samples\Geometry Sequence Streaming\1.1.0\Streaming Samples\ExampleData\Twisty_Box
   pathRelation: 1
   targetPlaybackFPS: 30
 --- !u!114 &-6477893712793787118

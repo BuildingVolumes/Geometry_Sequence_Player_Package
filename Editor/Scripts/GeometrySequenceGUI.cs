@@ -49,7 +49,9 @@ namespace BuildingVolumes.Streaming
             serializedObject.Update();
             
             GeometrySequencePlayer player = (GeometrySequencePlayer)target;
-
+            Texture2D logo = (Texture2D)Resources.Load("gss_logo");
+            GUIStyle style = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleCenter };
+            EditorGUILayout.LabelField(new GUIContent(logo), style, GUILayout.MinHeight(50), GUILayout.MinWidth(256), GUILayout.ExpandWidth(true));
             GUILayout.Space(20);
 
             GUILayout.Label("Set Sequence", EditorStyles.boldLabel);

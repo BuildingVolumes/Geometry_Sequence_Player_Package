@@ -59,7 +59,7 @@ Shader "Unlit/GS_UnlitCircle"
             {
                 fixed4 col = i.color;
                 float a = circle(i.texcoord);
-                clip(a - 0.5)
+                clip(a - 0.5);
                 // apply fog
                 UNITY_APPLY_FOG(i.fogCoord, col);
                 return col;

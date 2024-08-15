@@ -2,6 +2,9 @@
 using System.IO;
 using Unity.Jobs.LowLevel.Unsafe;
 using UnityEngine.Rendering;
+using System;
+using System.Collections.Generic;
+
 
 
 #if UNITY_EDITOR
@@ -14,7 +17,6 @@ namespace BuildingVolumes.Streaming
     {
         public string pathToSequence { get; private set; }
 
-        public Transform parentTransform;
         public Bounds drawBounds = new Bounds(Vector3.zero, new Vector3(3, 3, 3));
 
         public int bufferSize = 30;
@@ -25,7 +27,10 @@ namespace BuildingVolumes.Streaming
         public Material pointcloudMaterialCircles;
         public Material pointcloudMaterialSplats;
         public Material meshMaterial;
-        public float pointSize;
+        public MaterialProperties materialSlots = MaterialProperties.Albedo;
+        public List<string> customMaterialSlots;
+
+        public float pointSize = 0.02f;
         public PointType pointType;
 
         public PointcloudRenderer pointcloudRenderer;
@@ -56,6 +61,8 @@ namespace BuildingVolumes.Streaming
 
         public enum PathType { AbsolutePath, RelativeToDataPath, RelativeToPersistentDataPath, RelativeToStreamingAssets };
         public enum PointType { Quads, Circles, SplatsExperimental};
+
+        [Flags] public enum MaterialProperties { Albedo = 1, Emission = 2, Detail = 4 }
 
         private void Awake()
         {
@@ -213,11 +220,7 @@ namespace BuildingVolumes.Streaming
         bool CreateStreamObject()
         {
             streamedMeshObject = new GameObject("StreamedMesh");
-
-            if (parentTransform != null)
-                streamedMeshObject.transform.parent = parentTransform;
-            else
-                streamedMeshObject.transform.parent = this.transform;
+            streamedMeshObject.transform.parent = this.transform;
 
             streamedMeshObject.transform.localPosition = Vector3.zero;
             streamedMeshObject.transform.localRotation = Quaternion.identity;
@@ -273,7 +276,7 @@ namespace BuildingVolumes.Streaming
                 renderer.sharedMaterial = new Material(meshMaterial);
 
             if (config.textureMode != SequenceConfiguration.TextureMode.None)
-                renderer.sharedMaterial.SetTexture("_MainTex", texture);
+                ApplyTextureToMaterial(renderer.sharedMaterial, texture, materialSlots, customMaterialSlots);
 
             if (pc)
                 pcRenderer.SetupPointcloudRenderer(config.maxVertexCount, meshfilter, pointSize);
@@ -328,6 +331,46 @@ namespace BuildingVolumes.Streaming
 
 
             return true;
+        }
+
+        public void ApplyTextureToMaterial(Material mat, Texture tex, MaterialProperties properties, List<string> customProperties)
+        {
+            if((MaterialProperties.Albedo & properties) == MaterialProperties.Albedo)
+            {
+                if (mat.HasProperty("_MainTex"))
+                    mat.SetTexture("_MainTex", tex);
+
+                Vector2 scale = mat.GetTextureScale("_MainTex");
+                mat.SetTextureScale("_MainTex", new Vector2(scale.x, scale.y * -1));
+            }
+                    
+
+            if ((MaterialProperties.Emission & properties) == MaterialProperties.Emission)
+            {
+                if (mat.HasProperty("_EmissionMap"))
+                    mat.SetTexture("_EmissionMap", tex);
+
+                Vector2 scale = mat.GetTextureScale("_EmissionMap");
+                mat.SetTextureScale("_EmissionMap", new Vector2(scale.x, scale.y * -1));
+            }                
+
+            if ((MaterialProperties.Detail & properties) == MaterialProperties.Detail)
+            {
+                if (mat.HasProperty("_DetailAlbedoMap"))
+                    mat.SetTexture("_DetailAlbedoMap", tex);
+
+                Vector2 scale = mat.GetTextureScale("_DetailAlbedoMap");
+                mat.SetTextureScale("_DetailAlbedoMap", new Vector2(scale.x, scale.y * -1));
+            }                
+
+            foreach (string prop in customProperties)
+            {
+                if(mat.HasProperty(prop))
+                    mat.SetTexture(prop, tex);
+
+                Vector2 scale = mat.GetTextureScale(prop);
+                mat.SetTextureScale(prop, new Vector2(scale.x, scale.y * -1));
+            }
         }
 
         public void SetPointcloudMaterial(PointType type, MeshRenderer renderer)
@@ -417,6 +460,10 @@ namespace BuildingVolumes.Streaming
         public void LoadEditorThumbnail(string pathToSequence)
         {
             ClearEditorThumbnail();
+
+            if(GetComponent<GeometrySequencePlayer>() != null)
+                if (GetComponent<GeometrySequencePlayer>().GetRelativeSequencePath().Length == 0)
+                    return;
 
             if (Directory.Exists(pathToSequence))
             {

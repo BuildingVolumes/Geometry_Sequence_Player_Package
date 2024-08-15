@@ -35,7 +35,7 @@ namespace BuildingVolumes.Streaming
 
             string pathToFile = pathToSequenceDir + "/" + "sequence.json";
 
-            if (File.Exists(pathToFile))
+            if (File.Exists(pathToFile) && pathToFile.Length > 0)
             {
                 content = File.ReadAllText(pathToFile);
             }
