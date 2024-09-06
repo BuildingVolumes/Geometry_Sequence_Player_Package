@@ -98,6 +98,9 @@ namespace BuildingVolumes.Streaming
             if (showBufferOptions)
             {
                 EditorGUILayout.PropertyField(bufferSize);
+                if (bufferSize.intValue < 2)
+                    bufferSize.intValue = 2;
+
                 EditorGUILayout.PropertyField(useAllThreads);
                 if (useAllThreads.boolValue)
                     GUI.enabled = false;
