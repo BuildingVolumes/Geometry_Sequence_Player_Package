@@ -40,9 +40,14 @@ namespace BuildingVolumes.Streaming
                     Debug.LogError("Could not open sequence! Please check the path and files!");
         }
 
+
+        /// <summary>
+        /// Add a Geometry Sequence Stream if there is non already existing on this gameobject.
+        /// Automatically performed when adding this component in the editor
+        /// </summary>
         public void SetupGeometryStream()
         {
-            //Add a Geometry Sequence Stream if there is non already existing on this gameobject
+            //
             if (stream == null)
             {
                 stream = gameObject.GetComponent<GeometrySequenceStream>();
@@ -51,6 +56,9 @@ namespace BuildingVolumes.Streaming
             }
         }
 
+        /// <summary>
+        /// The main update loop. Only executes in the runtime/playmode
+        /// </summary>
         private void Update()
         {
             if (play)
@@ -82,14 +90,14 @@ namespace BuildingVolumes.Streaming
         //+++++++++++++++++++++ PLAYBACK API ++++++++++++++++++++++++
 
         /// <summary>
-        /// Load a .ply sequence (and optionally textures) from the path, and start playback if autoplay is enabled.
-        /// Returns false when sequence could not be loaded, see Unity Console output for details in this case
+        /// Load a .ply sequence (and optionally textures) from the given path, and starts playback if autoplay is enabled.
+        /// Returns false when sequence could not be loaded, see Unity Console output for details in this case.
         /// </summary>
         /// <param name="path">The path to the sequence</param>
         /// <param name="relativeTo">Which location is the path relative to?</param>
         /// <param name="playbackFPS">Desired playback framerate (Default = 30 fps)</param>
         /// <param name="autoplay">Start the playback as soon as possible. Might have a small delay as a frames need to load first</param>
-        /// <param name="buffer">Preload the first few frames into memory. Only applicable if autostart set to false. <</param>
+        /// <param name="buffer">Preload the first few frames into memory before playing. Only applicable if autostart set to false. <</param>
         /// <returns>True when the sequence could sucessfully be loaded, false if an error has occured</returns>
         public bool OpenSequence(string path, GeometrySequenceStream.PathType relativeTo, float playbackFPS = 30f, bool autoplay = false, bool buffer = true)
         {
@@ -104,10 +112,10 @@ namespace BuildingVolumes.Streaming
         }
 
         /// <summary>
-        /// Loads the sequence which is currently set in the player, optionally starts playback.
+        /// (Re)loads the sequence which is currently set in the player, optionally starts playback.
         /// </summary>
         /// <param name="autoplay">Start playback immediatly after loading</param>
-        /// <param name="buffer">If the playback does not autostart, loads the first few frames into memory</param>
+        /// <param name="buffer">Preload the first few frames into memory before playing. Only applicable if autostart set to false. <</param>
         /// <returns>True when the sequence could sucessfully be reloaded, false if an error has occured</returns>
         public bool LoadCurrentSequence(bool autoplay = false, bool buffer = true)
         {
@@ -216,6 +224,7 @@ namespace BuildingVolumes.Streaming
 
         /// <summary>
         /// Goes to a specific time in  a clip. The time is dependent on the framerate e.g. the same clip at 30 FPS is twice as long as at 60 FPS.
+        /// Use GetTotalTime() to see how long the clip is
         /// </summary>
         /// <param name="timeInSeconds"></param>
         /// <returns></returns>
@@ -236,7 +245,7 @@ namespace BuildingVolumes.Streaming
         }
 
         /// <summary>
-        /// Makes the sequence visible on the screen
+        /// Makes the sequence visible
         /// </summary>
         public void Show()
         {
@@ -245,7 +254,7 @@ namespace BuildingVolumes.Streaming
         }
 
         /// <summary>
-        /// Hides the sequence from the screen, but still lets it runnning in the background
+        /// Hides the sequence, but still lets it run in the background
         /// </summary>
         public void Hide()
         {
@@ -426,8 +435,11 @@ namespace BuildingVolumes.Streaming
             return false;
         }
 
-
-        #region Events
+        /// <summary>
+        /// Used to wait until buffering has been completed before starting the sequence
+        /// </summary>
+        /// <param name="playFromStart"></param>
+        /// <returns></returns>
 
         private IEnumerator WaitForBufferingCompleted(bool playFromStart)
         {
@@ -449,10 +461,11 @@ namespace BuildingVolumes.Streaming
 
         }
 
-        #endregion
 
         #region Thumbnail
 #if UNITY_EDITOR
+
+        //Functions used to show the thumbnail in the Editor
         public void ShowThumbnail(string pathToSequence)
         {
             if (stream == null)

@@ -4,9 +4,6 @@ using Unity.Jobs.LowLevel.Unsafe;
 using UnityEngine.Rendering;
 using System;
 using System.Collections.Generic;
-
-
-
 #if UNITY_EDITOR
 using UnityEditor.SceneManagement;
 #endif
@@ -173,9 +170,8 @@ namespace BuildingVolumes.Streaming
 
 
         /// <summary>
-        /// Reads mesh data from a native array buffer
+        /// Reads mesh or pointcloud data from a native array buffer
         /// </summary>
-        /// <param name="frame"></param>
         void ShowGeometryData(Frame frame, MeshFilter meshFilter, PointcloudRenderer pcRenderer, SequenceConfiguration config)
         {
             frame.geoJobHandle.Complete();
@@ -217,6 +213,11 @@ namespace BuildingVolumes.Streaming
             texture.Apply();
         }
 
+        /// <summary>
+        /// Create the object which will contains all MeshRenders, Filters and other data
+        /// for this specific sequence
+        /// </summary>
+        /// <returns></returns>
         bool CreateStreamObject()
         {
             streamedMeshObject = new GameObject("StreamedMesh");

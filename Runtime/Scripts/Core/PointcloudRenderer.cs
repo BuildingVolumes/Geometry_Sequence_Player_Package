@@ -39,6 +39,11 @@ namespace BuildingVolumes.Streaming
             Render();
         }
 
+        /// <summary>
+        /// Set the pointcloud data to be rendered. Does only need to be set once per Pointcloud
+        /// </summary>
+        /// <param name="pointSource">The point positions and colors as a native array</param>
+        /// <param name="sourceCount">The amount of points contained in the array</param>
         public void SetPointcloudData(NativeArray<byte> pointSource, int sourceCount)
         {
             if (!enabled)
@@ -52,6 +57,10 @@ namespace BuildingVolumes.Streaming
             isDataSet = true;
         }
 
+        /// <summary>
+        /// Renders the currently set pointcloud to the screen. This process is sensitive to the camera used for rendering,
+        /// as the points always need to be oriented towards the camera.
+        /// </summary>
         public void Render()
         {
             if (!isDataSet || !enabled)
@@ -69,7 +78,7 @@ namespace BuildingVolumes.Streaming
                 return;
             }
 
-            //Rotation that lets the points face the camera
+            //Calculate rotation that lets the points face the camera
             Quaternion fromObjectToCamera = Quaternion.Inverse(transform.rotation) * (Quaternion.LookRotation(cam.transform.forward, cam.transform.up));
             Matrix4x4 rotateToCamMat = Matrix4x4.Rotate(fromObjectToCamera);
             rotateToCameraMat.SetData(new Matrix4x4[] { rotateToCamMat });
@@ -79,9 +88,13 @@ namespace BuildingVolumes.Streaming
 
         }
 
+        /// <summary>
+        /// Set the point diameter in Unity units. 
+        /// </summary>
+        /// <param name="size"></param>
         public void SetPointSize(float size)
         {
-            pointScale = size;
+            pointScale = size / 2; //Divide by two, otherwise the diameter will be twice as large as expected
             computeShader.SetFloat(pointScaleID, pointScale);
 
 #if UNITY_EDITOR 
@@ -92,7 +105,16 @@ namespace BuildingVolumes.Streaming
             }
 #endif
         }
-         
+        
+        /// <summary>
+        /// Prepares all buffers used for pointcloud rendering. This needs to be executed once per sequence
+        /// All buffers will be allocated with the max. possible size that can appear in the sequence to avoid
+        /// re-allocations
+        /// </summary>
+        /// <param name="maxPointCount">The max. numbers of point that will be shown in any frame of the sequence</param>
+        /// <param name="renderToMeshFilter">The mesh filter which will contains the final mesh of the pointclouds</param>
+        /// <param name="pointSize">The diameter of the points in Unity units</param>
+        /// <returns></returns>
         public int SetupPointcloudRenderer(int maxPointCount, MeshFilter renderToMeshFilter, float pointSize)
         {
             ReleaseLargeBuffers();
