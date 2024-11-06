@@ -134,8 +134,17 @@ namespace BuildingVolumes.Streaming
                 //Is the frame inside the buffer and fully loaded?
                 if (frameBufferIndex > -1)
                 {
-                    //The frame has been loaded and we'll show the model (& texture)
-                    ShowFrameData(bufferedReader.frameBuffer[frameBufferIndex], streamedMeshFilter, pointcloudRenderer, bufferedReader.sequenceConfig, texture);
+                    try
+                    {
+                        //The frame has been loaded and we'll show the model (& texture)
+                        ShowFrameData(bufferedReader.frameBuffer[frameBufferIndex], streamedMeshFilter, pointcloudRenderer, bufferedReader.sequenceConfig, texture);
+
+                    }
+
+                    catch(Exception ex)
+                    {
+                        print("Error");
+                    }
 
                     float decay = 0.95f;
                     if (elapsedMsSinceLastFrame > 0)

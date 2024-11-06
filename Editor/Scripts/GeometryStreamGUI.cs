@@ -29,6 +29,9 @@ namespace BuildingVolumes.Streaming
         SerializedProperty currentFrameTiming;
         SerializedProperty smoothedFPS;
 
+        SerializedProperty attachFrameDebugger;
+        SerializedProperty frameDebugger;
+
         bool showInfo;
         bool showBufferOptions;
         bool showMaterialSlots;
@@ -46,10 +49,13 @@ namespace BuildingVolumes.Streaming
             threadCount = serializedObject.FindProperty("threadCount");
 
             droppedFrame = serializedObject.FindProperty("frameDropped");
-            currentFrame = serializedObject.FindProperty("currentFrameIndex");
+            currentFrame = serializedObject.FindProperty("lastFrameIndex");
             targetFrameTiming = serializedObject.FindProperty("targetFrameTimeMs");
-            currentFrameTiming = serializedObject.FindProperty("elapsedMsSinceLastFrame");
+            currentFrameTiming = serializedObject.FindProperty("sequenceDeltaTime");
             smoothedFPS = serializedObject.FindProperty("smoothedFPS");
+
+            attachFrameDebugger = serializedObject.FindProperty("attachFrameDebugger");
+            frameDebugger = serializedObject.FindProperty("frameDebugger");
 
             stream = (GeometrySequenceStream)target;
 
@@ -118,6 +124,11 @@ namespace BuildingVolumes.Streaming
                 EditorGUILayout.PropertyField(currentFrameTiming, new GUIContent("Current frame time in ms"));
                 EditorGUILayout.PropertyField(smoothedFPS, new GUIContent("Smoothed FPS"));
                 EditorGUI.EndDisabledGroup();
+
+                EditorGUILayout.PropertyField(attachFrameDebugger, new GUIContent("Attach Editor Frame Debugger"));
+                EditorGUI.BeginDisabledGroup(attachFrameDebugger.boolValue);
+                EditorGUILayout.PropertyField(frameDebugger);
+
             }           
 
             serializedObject.ApplyModifiedProperties();

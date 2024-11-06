@@ -23,6 +23,7 @@ namespace BuildingVolumes.Streaming
         public NativeArray<byte> indiceBufferRaw;
         public NativeArray<byte> indiceIntermediateBuffer;
         public NativeArray<byte> textureBufferRaw;
+        public Texture2D texture;
 
         public SequenceConfiguration sequenceConfiguration;
 
@@ -31,18 +32,25 @@ namespace BuildingVolumes.Streaming
         public ReadTextureJob textureJob;
         public JobHandle textureJobHandle;
 
+        public BufferState bufferState = BufferState.Empty;
         public int readBufferSize;
         public int playbackIndex;
-        public bool wasConsumed;
+        public float finishedBufferingTime;
+
+        public GameObject frameObject;
+        public MeshRenderer frameMeshRenderer;
+        public MeshFilter frameMeshFilter;
 
         public Frame()
         {
             playbackIndex = 0;
-            wasConsumed = true;
+            bufferState = BufferState.Empty;
         }
     }
 
     public enum TextureMode { None, Single, PerFrame };
+
+    public enum BufferState { Empty, Consumed, Reading, Loading, Ready, Playing}
 
     public class BufferedGeometryReader
     {
@@ -53,8 +61,11 @@ namespace BuildingVolumes.Streaming
         public string[] texturesFilePathASTC;
         public int bufferSize = 4;
         public int totalFrames = 0;
-
+        public int frameCount = 0;
         public Frame[] frameBuffer;
+        
+        public GameObject streamParent;
+        public Material materialSource;
 
         bool buffering = true;
 
@@ -62,8 +73,10 @@ namespace BuildingVolumes.Streaming
         /// Create a new buffered reader. You must include a path to a valid folder
         /// </summary>
         /// <param name="folder">A path to a folder containing .ply geometry files and optionally .dds texture files</param>
-        public BufferedGeometryReader()
+        public BufferedGeometryReader(GameObject streamObject, Material source)
         {
+            this.streamParent = streamObject;
+            this.materialSource = source;
         }
 
         ~BufferedGeometryReader()
@@ -104,6 +117,12 @@ namespace BuildingVolumes.Streaming
                 return false;
             }
 
+            if(plyFilePaths.Length != sequenceConfig.verticeCounts.Count)
+            {
+                Debug.LogError("Could not find all required .ply files, make sure your sequence doesn't miss any!");
+                return false;
+            }
+
             if (sequenceConfig.textureMode != SequenceConfiguration.TextureMode.None)
             {
                 if (sequenceConfig.DDS)
@@ -126,6 +145,15 @@ namespace BuildingVolumes.Streaming
                         Debug.LogError("No .dds texture files (for desktop devices) could be found! Make sure that you converted and uploaded .dds textures for this device!");
                         return false;
                     }
+
+                    if(sequenceConfig.textureMode == SequenceConfiguration.TextureMode.PerFrame)
+                    {
+                        if(texturesFilePathDDS.Length != sequenceConfig.verticeCounts.Count)
+                        {
+                            Debug.LogError("Could not find all required .dds texture files, make sure your sequence doesn't miss any!");
+                            return false;
+                        }
+                    }                    
                 }
 
                 if (sequenceConfig.ASTC)
@@ -148,6 +176,15 @@ namespace BuildingVolumes.Streaming
                         Debug.LogError("No .astc texture files (for mobile devices) could be found! Make sure that you converted and uploaded .astc texture files to this device!");
                         return false;
                     }
+
+                    if(sequenceConfig.textureMode == SequenceConfiguration.TextureMode.PerFrame)
+                    {
+                        if(texturesFilePathASTC.Length != sequenceConfig.verticeCounts.Count)
+                        {
+                            Debug.LogError("Could not find all required .atsc texture files, make sure your sequence doesn't miss any!");
+                            return false;
+                        }
+                    }            
                 }
 
 
@@ -169,7 +206,7 @@ namespace BuildingVolumes.Streaming
             {
                 frameBuffer[i] = new Frame();
                 frameBuffer[i].sequenceConfiguration = sequenceConfig;
-                AllocateFrame(frameBuffer[i], sequenceConfig);
+                AllocateFrame(frameBuffer[i], sequenceConfig, i);
                 frameBuffer[i].playbackIndex = -1;
             }
 
@@ -180,7 +217,7 @@ namespace BuildingVolumes.Streaming
         /// <summary>
         /// Loads new frames in the buffer if there are free slots. Call this every frame
         /// </summary>
-        public void BufferFrames(int currentPlaybackFrame)
+        public void BufferFrames(int targetPlaybackIndex, int lastPlaybackIndex)
         {
             int framesLoadedAhead = 0;
             int framesInPast = 0;
@@ -202,43 +239,50 @@ namespace BuildingVolumes.Streaming
             if (!buffering)
                 return;
 
-            if (currentPlaybackFrame < 0 || currentPlaybackFrame > totalFrames)
+            if (targetPlaybackIndex < 0 || targetPlaybackIndex > totalFrames)
                 return;
 
             //Mark frames from buffer that are outside our current buffer range
             //as okay to be overwritten, which keeps our buffer moving forward in case of skips or lags
-            MarkFramesOutsideBufferRange(currentPlaybackFrame);
+            DeletePastFrames(targetPlaybackIndex, lastPlaybackIndex);
 
             //Find out which frames we need to buffer. The buffer is a ring
             //buffer, so that when the playback loops, the whole clip doesn't need
             //to reload, but the frames should be ready.
             List<int> framesToBuffer = new List<int>();
 
+            //Look for the frames we could potentially buffer
             for (int i = 0; i < bufferSize; i++)
             {
+                //In case our buffer is larger than the whole sequence
                 if (framesToBuffer.Count >= totalFrames)
                     continue;
 
-                if (currentPlaybackFrame >= totalFrames)
-                    currentPlaybackFrame = 0;
+                if (targetPlaybackIndex >= totalFrames)
+                    targetPlaybackIndex = 0;
 
-                if (GetBufferIndexForPlaybackIndex(currentPlaybackFrame) == -1)
+                int bufferIndex = GetBufferIndex(targetPlaybackIndex);
+                if (bufferIndex == -1) //The frame is not already buffered
                 {
-                    framesToBuffer.Add(currentPlaybackFrame);
+                    framesToBuffer.Add(targetPlaybackIndex);
+                    //Debug.Log("Buffer requested for frame " + targetPlaybackIndex + " in buffer " + i);
                 }
 
-                currentPlaybackFrame++;
+                targetPlaybackIndex++;
             }
 
+            //Check if we have any free buffer space to buffer more frames
             for (int i = 0; i < frameBuffer.Length; i++)
             {
                 //Check if the buffer is ready to load the next frame 
-                if (frameBuffer[i].wasConsumed && framesToBuffer.Count > 0)
+                if ((frameBuffer[i].bufferState == BufferState.Consumed || frameBuffer[i].bufferState == BufferState.Empty) && framesToBuffer.Count > 0)
                 {
                     int newPlaybackIndex = framesToBuffer[0];
 
                     if (newPlaybackIndex < totalFrames)
                     {
+                        //Debug.Log("Buffering Frame: " + newPlaybackIndex + " at buffer " + i);
+
                         SetupFrameForReading(frameBuffer[i], sequenceConfig, newPlaybackIndex);
                         ScheduleGeometryReadJob(frameBuffer[i], plyFilePaths[newPlaybackIndex]);
                         if (sequenceConfig.textureMode == SequenceConfiguration.TextureMode.PerFrame)
@@ -251,20 +295,97 @@ namespace BuildingVolumes.Streaming
             }
 
             JobHandle.ScheduleBatchedJobs();
+
+            CheckFramesForCompletion();
+        }
+
+        public void CheckFramesForCompletion()
+        {
+            if(sequenceConfig.geometryType != GeometryType.point)
+            {
+                foreach (Frame frame in frameBuffer)
+                {
+                    if(IsFrameBuffered(frame) && frame.bufferState == BufferState.Reading){
+                        frame.bufferState = BufferState.Loading;
+                        frame.finishedBufferingTime = Time.time;
+
+                        frame.frameObject.name = "Frame " + frame.playbackIndex + " Finished Buffering ";
+
+                        if(frame.sequenceConfiguration.textureMode == SequenceConfiguration.TextureMode.PerFrame)
+                        {
+                            frame.textureJobHandle.Complete();
+                            frame.texture.LoadRawTextureData<byte>(frame.textureBufferRaw);
+                            frame.texture.Apply(false);
+                            frame.frameMeshRenderer.sharedMaterial.SetTexture("_mainTex", frame.texture);
+                            if(frame.frameMeshRenderer != null)
+                            {
+                                frame.frameMeshRenderer.sharedMaterial.mainTexture = frame.texture;
+                            }
+                        }
+
+                        frame.bufferState = BufferState.Ready;
+                    }
+                } 
+            } 
+
+            else{
+
+                foreach (Frame frame in frameBuffer)
+                {
+                    if(IsFrameBuffered(frame) && frame.bufferState == BufferState.Reading){
+                        frame.bufferState = BufferState.Ready;
+                    }
+                } 
+            }                       
+        }
+
+                /// <summary>
+        /// Has the data loading finished for this frame?
+        /// </summary>
+        /// <param name="frame"></param>
+        /// <returns></returns>
+        public bool IsFrameBuffered(Frame frame)
+        {
+            if (frame.geoJobHandle.IsCompleted)
+            {
+                if (sequenceConfig.textureMode == SequenceConfiguration.TextureMode.PerFrame)
+                {
+                    if (frame.textureJobHandle.IsCompleted)
+                        return true;
+                }
+
+                else
+                    return true;
+            }
+
+            return false;
         }
 
         public void SetupFrameForReading(Frame frame, SequenceConfiguration config, int index)
         {
             frame.sequenceConfiguration = config;
             frame.playbackIndex = index;
-            frame.wasConsumed = false;
+            frame.bufferState = BufferState.Reading;
         }
 
-        void AllocateFrame(Frame frame, SequenceConfiguration config)
+        void AllocateFrame(Frame frame, SequenceConfiguration config, int bufferIndex)
         {
             frame.sequenceConfiguration.geometryType = config.geometryType;
             frame.geoJob = new ReadGeometryJob();
             frame.textureJob = new ReadTextureJob();
+
+        if(Application.isPlaying && config.geometryType != GeometryType.point){
+            frame.frameObject = new GameObject("Stream_Prewarmer");
+            frame.frameObject.transform.parent = streamParent.transform;
+            frame.frameObject.transform.localPosition = new Vector3(0,0,0);
+            frame.frameObject.transform.localRotation = Quaternion.identity;
+            frame.frameObject.transform.localScale = new Vector3(0.001f, 0.001f, 0.001f);
+            frame.frameMeshFilter = frame.frameObject.AddComponent<MeshFilter>();
+            frame.frameMeshFilter.sharedMesh = new Mesh();
+            frame.frameMeshRenderer = frame.frameObject.AddComponent<MeshRenderer>();
+            frame.frameMeshRenderer.material = new Material(materialSource);
+        }
+            
 
             //Allocate every frame with the highest amount of vertices and indices being used in this sequence. 
             //This way, we can re-use the meshArrays, instead of re-allocating them each frame
@@ -291,45 +412,60 @@ namespace BuildingVolumes.Streaming
                 frame.textureBufferRaw = new NativeArray<byte>(GetDeviceDependentTextureSize(config), Allocator.Persistent);
             else
                 frame.textureBufferRaw = new NativeArray<byte>(1, Allocator.Persistent);
+
+            if(config.textureMode != SequenceConfiguration.TextureMode.None)
+            {
+                if(GetDeviceDependentTextureFormat() == SequenceConfiguration.TextureFormat.DDS)
+                    frame.texture = new Texture2D(config.textureWidth, config.textureHeight, UnityEngine.TextureFormat.DXT1, false);
+                else if (GetDeviceDependentTextureFormat() == SequenceConfiguration.TextureFormat.ASTC)
+                    frame.texture = new Texture2D(config.textureWidth, config.textureHeight, UnityEngine.TextureFormat.ASTC_6x6, false);
+                else
+                {
+                    frame.texture = new Texture2D(1, 1);
+                    Debug.LogError("Invalid texture format!");
+                }
+            }
         }
 
         /// <summary>
-        /// Marks frames that are either in the past of current Frame index,
-        /// or too far in the future (the whole buffer size away from the current Frame Index)
-        /// Should be regularily called to keep the buffer going
+        /// Marks frames that are in the past of current Frame index
+        /// Should be regularily called to keep the buffer clean in case of skips/lag
         /// </summary>
-        /// <param name="currentFrameIndex">The currently shown/played back frame</param>
-        public void MarkFramesOutsideBufferRange(int currentFrameIndex)
+        /// <param name="targetPlaybackIndex">The currently shown/played back frame</param>
+        public void DeletePastFrames(int targetPlaybackIndex, int lastPlaybackIndex)
         {
-            //We want to treat the buffer as a ring buffer, so that when we're looping,
-            //the playback doesn't stutter. This means if the current Frame index is near
-            //the end of the buffer, our buffer range extends to the beginning again
-
-            int minFrame = currentFrameIndex;
-            int maxframe = currentFrameIndex + bufferSize;
-            if (maxframe >= totalFrames)
-                maxframe -= (totalFrames - 1);
+            //We want to keep all frames in the buffer, which are one buffersize ahead of
+            //the target Frame, as these will be played soon. Outside of that range, all frames can be deleted 
+            int targetMaxFrame = targetPlaybackIndex + bufferSize;
+            if(targetMaxFrame >= totalFrames)
+                targetMaxFrame = targetMaxFrame % totalFrames;
 
             for (int i = 0; i < frameBuffer.Length; i++)
             {
-                bool dispose = true;
+                bool dispose = false;
                 int playbackIndex = frameBuffer[i].playbackIndex;
 
-                if (minFrame < maxframe)
+                //If the target max frame has already looped around the ringbuffer
+                if (targetMaxFrame < targetPlaybackIndex)
                 {
-                    if (playbackIndex >= minFrame && playbackIndex < maxframe)
-                        dispose = false;
+                    if(playbackIndex < targetPlaybackIndex  && playbackIndex > targetMaxFrame)
+                        dispose = true;
                 }
 
                 else
                 {
-                    if (playbackIndex >= maxframe || playbackIndex < maxframe)
-                        dispose = false;
+                    if (playbackIndex < targetPlaybackIndex || playbackIndex > targetMaxFrame)
+                        dispose = true;
                 }
 
                 if (dispose)
-                    frameBuffer[i].wasConsumed = true;
-
+                {
+                    if(playbackIndex != lastPlaybackIndex)
+                    {
+                        frameBuffer[i].bufferState = BufferState.Empty;                    
+                        //Debug.Log("Deleting frame " + playbackIndex + " from Buffer " + i);
+                    }
+                }            
             }
         }
 
@@ -344,7 +480,7 @@ namespace BuildingVolumes.Streaming
             {
                 if (frameBuffer[i].playbackIndex == playbackIndex)
                 {
-                    if (IsFrameBuffered(frameBuffer[i]))
+                    if (frameBuffer[i].bufferState == BufferState.Ready)
                     {
                         return i;
                     }
@@ -356,7 +492,7 @@ namespace BuildingVolumes.Streaming
             return -1;
         }
 
-        public int GetBufferIndexForPlaybackIndex(int playbackIndex)
+        public int GetBufferIndex(int playbackIndex)
         {
             for (int i = 0; i < frameBuffer.Length; i++)
             {
@@ -476,7 +612,7 @@ namespace BuildingVolumes.Streaming
         }
 
         /// <summary>
-        /// Schedules a job which loads a .dds DXT1 file from disk into memory
+        /// Schedules a job which loads a texture file from disk into memory
         /// </summary>
         /// <param name="frame">The frame data into which the texture will be loaded. The textureBufferRaw needs to be intialized already </param>
         /// <param name="texturePath"></param>
