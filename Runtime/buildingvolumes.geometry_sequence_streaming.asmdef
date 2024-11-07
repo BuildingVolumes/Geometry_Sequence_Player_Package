@@ -2,7 +2,8 @@
     "name": "buildingvolumes.geometry_sequence_streaming",
     "rootNamespace": "",
     "references": [
-        "Unity.Timeline"
+        "Unity.Timeline",
+        "Unity.TextMeshPro"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

@@ -20,6 +20,8 @@ namespace BuildingVolumes.Streaming
         public bool useAllThreads = true;
         public int threadCount = 4;
 
+        public bool attachFrameDebugger = false;
+        public GSFrameDebugger frameDebugger = null;
         public Material pointcloudMaterialQuads;
         public Material pointcloudMaterialCircles;
         public Material pointcloudMaterialSplats;
@@ -41,10 +43,18 @@ namespace BuildingVolumes.Streaming
         bool readerInitialized = false;
 
         public bool frameDropped = false;
-        public int currentFrameIndex = 0;
+        public int framesDroppedCounter = 0;
+
+        public int currentFrameBufferIndex = 0;
         public float targetFrameTimeMs = 0;
-        public float elapsedMsSinceLastFrame = 0;
+        public float lastFrameTime = 0;
+        public int lastFrameIndex;
+        public float sequenceDeltaTime = 0;
+        public float elapsedMsSinceSequenceStart = 0;
         public float smoothedFPS = 0f;
+
+        float sequenceStartTime = 0;
+        float lastSequenceCompletionTime;
 
         public GameObject streamedMeshObject;
         [HideInInspector]
@@ -63,6 +73,15 @@ namespace BuildingVolumes.Streaming
 
         private void Awake()
         {
+
+#if !UNITY_EDITOR && !UNITY_STANDALONE_WIN && !UNITY_STANDALONE_OSX && !UNITY_STANDALONE_LINUX && !UNITY_IOS && !UNITY_ANDROID && !UNITY_TVOS
+            Debug.LogError("Platform not supported by Geometry Sequence Streamer! Playback will probably fail");
+#endif
+
+#if UNITY_VISIONOS
+	Debug.LogError("Visions OS is only supported in the Unity Asset Store Version of this plugin!");
+#endif
+
             if (!useAllThreads)
                 JobsUtility.JobWorkerCount = threadCount;
             else
@@ -73,9 +92,11 @@ namespace BuildingVolumes.Streaming
 
             SetupMaterials();
 
-#if !UNITY_EDITOR && !UNITY_STANDALONE_WIN && !UNITY_STANDALONE_OSX && !UNITY_STANDALONE_LINUX && !UNITY_IOS && !UNITY_VISIONOS && !UNITY_ANDROID && !UNITY_TVOS
-            Debug.LogError("Platform not supported by Geometry Sequence Streamer! Playback will probably fail");
-#endif
+            if(attachFrameDebugger)
+            {
+                AttachFrameDebugger();
+            }
+            
         }
 
         /// <summary>
@@ -86,26 +107,30 @@ namespace BuildingVolumes.Streaming
         {
             CleanupSequence();
             readerInitialized = false;
-            currentFrameIndex = 0;
+            lastFrameIndex = -1;
+            currentFrameBufferIndex = -1;
 
             pathToSequence = absolutePathToSequence;
 
-            bufferedReader = new BufferedGeometryReader();
+            if (!CreateStreamObject())
+                return readerInitialized;
+
+            bufferedReader = new BufferedGeometryReader(streamedMeshObject, meshMaterial);
             if (!bufferedReader.SetupReader(pathToSequence, bufferSize))
                 return readerInitialized;
 
-            if (!CreateStreamObject())
-                return readerInitialized;
+            ConfigureRenderObject(streamedMeshObject, bufferedReader.sequenceConfig, false, out streamedMeshRenderer, out streamedMeshFilter, out pointcloudRenderer, out texture);
 
             //If we have a single texture in the sequence, we read it immidiatly
             if (bufferedReader.sequenceConfig.textureMode == SequenceConfiguration.TextureMode.Single)
             {
                     bufferedReader.SetupFrameForReading(bufferedReader.frameBuffer[0], bufferedReader.sequenceConfig, 0);
                     bufferedReader.ScheduleTextureReadJob(bufferedReader.frameBuffer[0], bufferedReader.GetDeviceDependendentTexturePath(0));
-                    ShowTextureData(bufferedReader.frameBuffer[0], texture);
+                    //ShowTextureData(bufferedReader.frameBuffer[0], texture);
             }
 
             targetFrameTimeMs = 1000f / (float)playbackFPS;
+            smoothedFPS = playbackFPS;
 
             readerInitialized = true;
             return readerInitialized;
@@ -116,48 +141,75 @@ namespace BuildingVolumes.Streaming
             if (!readerInitialized)
                 return;
 
-            elapsedMsSinceLastFrame += Time.deltaTime * 1000;
-
-            int targetFrameIndex = Mathf.RoundToInt(playbackTimeInMs / targetFrameTimeMs);
-
-
-            //Fill the buffer with new data from the disk, and delete unused frames (In case of lag/skip)
-            bufferedReader.BufferFrames(targetFrameIndex);
-
-
-            if (targetFrameIndex != currentFrameIndex && targetFrameIndex < bufferedReader.totalFrames)
+            sequenceDeltaTime += Time.deltaTime * 1000;
+            elapsedMsSinceSequenceStart += Time.deltaTime * 1000;
+            if(elapsedMsSinceSequenceStart > targetFrameTimeMs * bufferedReader.totalFrames) //If we wrap around our ring buffer
             {
-                //Check if our desired frame is inside the frame buffer and loaded, so that we can use it
-                int frameBufferIndex = bufferedReader.GetBufferIndexForLoadedPlaybackIndex(targetFrameIndex);
+                elapsedMsSinceSequenceStart -= targetFrameTimeMs * bufferedReader.totalFrames;
+                
+                //For performance tracking
+                lastSequenceCompletionTime = (Time.time - sequenceStartTime) * lastSequenceCompletionTime;
+                sequenceStartTime = Time.time;
+                framesDroppedCounter = 0;
+            }
 
+            int targetFrameIndex = Mathf.RoundToInt(elapsedMsSinceSequenceStart / targetFrameTimeMs);
+
+            //Check how many frames our targetframe is in advance relative to the last played frame
+            int framesInAdvance = 0;
+            if(targetFrameIndex > lastFrameIndex)
+                framesInAdvance = targetFrameIndex - lastFrameIndex;
+
+            if(targetFrameIndex < lastFrameIndex)
+                framesInAdvance = (bufferedReader.totalFrames - lastFrameIndex) + targetFrameIndex;
+            
+            frameDropped = framesInAdvance > 1 ? true : false;
+            if(frameDropped)
+                framesDroppedCounter += framesInAdvance - 1;
+
+            //Debug.Log("Elapsed MS in sequence: " + elapsedMsSinceSequenceStart + ", target Index: " + targetFrameIndex + ", last frame: " + lastFrameIndex + ", target in advance: " + targetFrameIndex);
+
+            bufferedReader.BufferFrames(targetFrameIndex, lastFrameIndex);          
+
+            if (framesInAdvance > 0 )
+            {              
+                //Check if our desired frame is inside the frame buffer and loaded, so that we can use it
+                int newBufferIndex = bufferedReader.GetBufferIndexForLoadedPlaybackIndex(targetFrameIndex);
 
                 //Is the frame inside the buffer and fully loaded?
-                if (frameBufferIndex > -1)
+                if (newBufferIndex > -1)
                 {
-                    try
-                    {
-                        //The frame has been loaded and we'll show the model (& texture)
-                        ShowFrameData(bufferedReader.frameBuffer[frameBufferIndex], streamedMeshFilter, pointcloudRenderer, bufferedReader.sequenceConfig, texture);
+                    //Now that we a show a new frame, we mark the old played frame as consumed, and the new frame as playing
+                    if(currentFrameBufferIndex > -1)
+                        bufferedReader.frameBuffer[currentFrameBufferIndex].bufferState = BufferState.Consumed;
+                    
+                    bufferedReader.frameBuffer[newBufferIndex].bufferState = BufferState.Playing;
+                    currentFrameBufferIndex = newBufferIndex;
+                    lastFrameIndex = targetFrameIndex;
 
-                    }
+                    ShowFrameData(bufferedReader.frameBuffer[currentFrameBufferIndex], pointcloudRenderer, bufferedReader.sequenceConfig, texture);
 
-                    catch(Exception ex)
-                    {
-                        print("Error");
-                    }
+                    //Performance tracking
+                    
+                    //If we are lagging behind, but have sucessfully catched up to the current target frame
+                    //we still hit our target time window and the stream is performing well
+                    //Therfore we substract the dropped frames from our deltatime
 
-                    float decay = 0.95f;
-                    if (elapsedMsSinceLastFrame > 0)
-                        smoothedFPS = decay * smoothedFPS + (1.0f - decay) * (1000f / elapsedMsSinceLastFrame);
+                    if(frameDropped && framesInAdvance > 1)
+                        sequenceDeltaTime -= (framesInAdvance - 1) * targetFrameTimeMs; 
 
-                    elapsedMsSinceLastFrame = 0;
+                    float decay = 0.9f;
+                    smoothedFPS = decay * smoothedFPS + (1.0f - decay) * (1000f / sequenceDeltaTime);
+
+                    lastFrameTime = sequenceDeltaTime;
+                    sequenceDeltaTime = 0;
                 }
-
-                if (Mathf.Abs(targetFrameIndex - currentFrameIndex) > 1 && targetFrameIndex > 0)
-                    frameDropped = true;
-
-                currentFrameIndex = targetFrameIndex;
             }
+
+             if(frameDebugger != null)
+             {
+                frameDebugger.UpdateFrameDebugger(this);
+             }
 
             //TODO: Buffering callback
 
@@ -167,20 +219,41 @@ namespace BuildingVolumes.Streaming
         /// Display mesh and texture data from a frame buffer
         /// </summary>
         /// <param name="frame"></param>
-        public void ShowFrameData(Frame frame, MeshFilter meshFilter, PointcloudRenderer pcRenderer, SequenceConfiguration config, Texture2D texture)
+        public void ShowFrameData(Frame frame, PointcloudRenderer pcRenderer, SequenceConfiguration config, Texture2D texture)
         {
-            ShowGeometryData(frame, meshFilter, pcRenderer, config);
+
+            if(config.geometryType != SequenceConfiguration.GeometryType.point)
+            {
+                foreach(Frame f in bufferedReader.frameBuffer)
+                    {
+                        f.frameObject.transform.localScale = new Vector3(0.001f, 0.001f, 0.001f);
+                    }
+
+                frame.frameObject.transform.localScale = Vector3.one;
+
+                ShowGeometryData(frame, frame.frameMeshFilter, pcRenderer, config);
+            }
+
+            else
+            {
+                ShowGeometryData(frame, streamedMeshFilter, pcRenderer, config);
+            }
+                
+
+            
+
 
             if (config.textureMode == SequenceConfiguration.TextureMode.PerFrame)
-                ShowTextureData(frame, texture);
+                //ShowTextureData(frame);
 
-            frame.wasConsumed = true;
+            frame.finishedBufferingTime = 0;
         }
 
 
         /// <summary>
         /// Reads mesh or pointcloud data from a native array buffer
         /// </summary>
+        /// <param name="frame"></param>
         void ShowGeometryData(Frame frame, MeshFilter meshFilter, PointcloudRenderer pcRenderer, SequenceConfiguration config)
         {
             frame.geoJobHandle.Complete();
@@ -217,9 +290,7 @@ namespace BuildingVolumes.Streaming
         /// <param name="frame"></param>
         void ShowTextureData(Frame frame, Texture2D texture)
         {
-            frame.textureJobHandle.Complete();
-            texture.SetPixelData<byte>(frame.textureBufferRaw, 0);
-            texture.Apply();
+            ApplyTextureToMaterial(streamedMeshRenderer.sharedMaterial, frame.texture, materialSlots, customMaterialSlots);
         }
 
         /// <summary>
@@ -236,7 +307,8 @@ namespace BuildingVolumes.Streaming
             streamedMeshObject.transform.localRotation = Quaternion.identity;
             streamedMeshObject.transform.localScale = Vector3.one;
 
-            return ConfigureRenderObject(streamedMeshObject, bufferedReader.sequenceConfig, false, out streamedMeshRenderer, out streamedMeshFilter, out pointcloudRenderer, out texture);
+            return true;
+
         }
 
         bool ConfigureRenderObject(GameObject renderObject, SequenceConfiguration config, bool hidden, out MeshRenderer renderer, out MeshFilter meshfilter, out PointcloudRenderer pcRenderer, out Texture2D texture)
@@ -256,15 +328,25 @@ namespace BuildingVolumes.Streaming
             if (!pcRenderer && pc)
                 pcRenderer = renderObject.AddComponent<PointcloudRenderer>();
 
-            if(SequenceConfiguration.GetDeviceDependentTextureFormat() == SequenceConfiguration.TextureFormat.DDS)
-                texture = new Texture2D(config.textureWidth, config.textureHeight, TextureFormat.DXT1, false);
-            else if (SequenceConfiguration.GetDeviceDependentTextureFormat() == SequenceConfiguration.TextureFormat.ASTC)
-                texture = new Texture2D(config.textureWidth, config.textureHeight, TextureFormat.ASTC_6x6, false);
-            else
+            if(config.textureMode != SequenceConfiguration.TextureMode.None)
             {
-                texture = new Texture2D(1, 1);
-                Debug.LogError("Unsupported Texture Format!");
+                if(SequenceConfiguration.GetDeviceDependentTextureFormat() == SequenceConfiguration.TextureFormat.DDS)
+                    texture = new Texture2D(config.textureWidth, config.textureHeight, TextureFormat.DXT1, false);
+                else if (SequenceConfiguration.GetDeviceDependentTextureFormat() == SequenceConfiguration.TextureFormat.ASTC)
+                    texture = new Texture2D(config.textureWidth, config.textureHeight, TextureFormat.ASTC_6x6, false);
+                else
+                {
+                    texture = new Texture2D(1, 1);
+                    Debug.LogError("Invalid texture format!");
+                }
             }
+
+            else
+                {
+                    texture = new Texture2D(1, 1);
+                }
+            
+            
 
             if (hidden)
             {
@@ -477,7 +559,7 @@ namespace BuildingVolumes.Streaming
 
             if (Directory.Exists(pathToSequence))
             {
-                thumbnailReader = new BufferedGeometryReader();
+                thumbnailReader = new BufferedGeometryReader(gameObject, null);
                 if (!thumbnailReader.SetupReader(pathToSequence, 1))
                 {
                     Debug.LogWarning("Could not load thumbnail for sequence: " + pathToSequence);
@@ -522,6 +604,16 @@ namespace BuildingVolumes.Streaming
         }
 #endif
         #endregion
-
+        
+        #region Debug
+        void AttachFrameDebugger()
+        {
+            #if UNITY_EDITOR
+            GameObject debugGO = Resources.Load("GSFrameDebugger") as GameObject;
+            frameDebugger = Instantiate(debugGO).GetComponent<GSFrameDebugger>();
+            frameDebugger.GetCanvas().renderMode = RenderMode.ScreenSpaceOverlay;
+            #endif
+        }
+        #endregion
     }
 }

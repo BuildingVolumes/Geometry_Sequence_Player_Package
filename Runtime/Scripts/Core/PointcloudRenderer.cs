@@ -78,7 +78,7 @@ namespace BuildingVolumes.Streaming
                 return;
             }
 
-            //Calculate rotation that lets the points face the camera
+            //Rotation that lets the points face the camera
             Quaternion fromObjectToCamera = Quaternion.Inverse(transform.rotation) * (Quaternion.LookRotation(cam.transform.forward, cam.transform.up));
             Matrix4x4 rotateToCamMat = Matrix4x4.Rotate(fromObjectToCamera);
             rotateToCameraMat.SetData(new Matrix4x4[] { rotateToCamMat });

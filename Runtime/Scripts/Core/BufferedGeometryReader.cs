@@ -219,22 +219,6 @@ namespace BuildingVolumes.Streaming
         /// </summary>
         public void BufferFrames(int targetPlaybackIndex, int lastPlaybackIndex)
         {
-            int framesLoadedAhead = 0;
-            int framesInPast = 0;
-
-            for (int i = 0; frameBuffer.Length > i; i++)
-            {
-                if (frameBuffer[i].geoJobHandle.IsCompleted)
-                {
-                    if (frameBuffer[i].playbackIndex > currentPlaybackFrame)
-                        framesLoadedAhead++;
-
-                    if (frameBuffer[i].playbackIndex <= framesInPast)
-                    {
-                        framesInPast++;
-                    }
-                }
-            }
 
             if (!buffering)
                 return;
@@ -339,27 +323,6 @@ namespace BuildingVolumes.Streaming
             }                       
         }
 
-                /// <summary>
-        /// Has the data loading finished for this frame?
-        /// </summary>
-        /// <param name="frame"></param>
-        /// <returns></returns>
-        public bool IsFrameBuffered(Frame frame)
-        {
-            if (frame.geoJobHandle.IsCompleted)
-            {
-                if (sequenceConfig.textureMode == SequenceConfiguration.TextureMode.PerFrame)
-                {
-                    if (frame.textureJobHandle.IsCompleted)
-                        return true;
-                }
-
-                else
-                    return true;
-            }
-
-            return false;
-        }
 
         public void SetupFrameForReading(Frame frame, SequenceConfiguration config, int index)
         {
