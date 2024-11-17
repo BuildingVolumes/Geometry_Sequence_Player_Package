@@ -23,7 +23,6 @@ namespace BuildingVolumes.Streaming
         public NativeArray<byte> indiceBufferRaw;
         public NativeArray<byte> indiceIntermediateBuffer;
         public NativeArray<byte> textureBufferRaw;
-        public Texture2D texture;
 
         public SequenceConfiguration sequenceConfiguration;
 
@@ -37,10 +36,6 @@ namespace BuildingVolumes.Streaming
         public int playbackIndex;
         public float finishedBufferingTime;
 
-        public GameObject frameObject;
-        public MeshRenderer frameMeshRenderer;
-        public MeshFilter frameMeshFilter;
-
         public Frame()
         {
             playbackIndex = 0;
@@ -50,7 +45,7 @@ namespace BuildingVolumes.Streaming
 
     public enum TextureMode { None, Single, PerFrame };
 
-    public enum BufferState { Empty, Consumed, Reading, Loading, Ready, Playing}
+    public enum BufferState { Empty, Consumed, Reading, Loading, Ready, Playing }
 
     public class BufferedGeometryReader
     {
@@ -63,7 +58,7 @@ namespace BuildingVolumes.Streaming
         public int totalFrames = 0;
         public int frameCount = 0;
         public Frame[] frameBuffer;
-        
+
         public GameObject streamParent;
         public Material materialSource;
 
@@ -117,7 +112,7 @@ namespace BuildingVolumes.Streaming
                 return false;
             }
 
-            if(plyFilePaths.Length != sequenceConfig.verticeCounts.Count)
+            if (plyFilePaths.Length != sequenceConfig.verticeCounts.Count)
             {
                 Debug.LogError("Could not find all required .ply files, make sure your sequence doesn't miss any!");
                 return false;
@@ -146,14 +141,14 @@ namespace BuildingVolumes.Streaming
                         return false;
                     }
 
-                    if(sequenceConfig.textureMode == SequenceConfiguration.TextureMode.PerFrame)
+                    if (sequenceConfig.textureMode == SequenceConfiguration.TextureMode.PerFrame)
                     {
-                        if(texturesFilePathDDS.Length != sequenceConfig.verticeCounts.Count)
+                        if (texturesFilePathDDS.Length != sequenceConfig.verticeCounts.Count)
                         {
                             Debug.LogError("Could not find all required .dds texture files, make sure your sequence doesn't miss any!");
                             return false;
                         }
-                    }                    
+                    }
                 }
 
                 if (sequenceConfig.ASTC)
@@ -177,14 +172,14 @@ namespace BuildingVolumes.Streaming
                         return false;
                     }
 
-                    if(sequenceConfig.textureMode == SequenceConfiguration.TextureMode.PerFrame)
+                    if (sequenceConfig.textureMode == SequenceConfiguration.TextureMode.PerFrame)
                     {
-                        if(texturesFilePathASTC.Length != sequenceConfig.verticeCounts.Count)
+                        if (texturesFilePathASTC.Length != sequenceConfig.verticeCounts.Count)
                         {
                             Debug.LogError("Could not find all required .atsc texture files, make sure your sequence doesn't miss any!");
                             return false;
                         }
-                    }            
+                    }
                 }
 
 
@@ -200,6 +195,12 @@ namespace BuildingVolumes.Streaming
 
             bufferSize = frameBufferSize;
             totalFrames = plyFilePaths.Length;
+
+            if (bufferSize < 2)
+                bufferSize = 2;
+            if (bufferSize >= totalFrames)
+                bufferSize = totalFrames - 1;
+
             frameBuffer = new Frame[bufferSize];
 
             for (int i = 0; i < frameBuffer.Length; i++)
@@ -285,44 +286,12 @@ namespace BuildingVolumes.Streaming
 
         public void CheckFramesForCompletion()
         {
-            if(sequenceConfig.geometryType != GeometryType.point)
+            foreach (Frame frame in frameBuffer)
             {
-                foreach (Frame frame in frameBuffer)
-                {
-                    if(IsFrameBuffered(frame) && frame.bufferState == BufferState.Reading){
-                        frame.bufferState = BufferState.Loading;
-                        frame.finishedBufferingTime = Time.time;
-
-                        frame.frameObject.name = "Frame " + frame.playbackIndex + " Finished Buffering ";
-
-                        if(frame.sequenceConfiguration.textureMode == SequenceConfiguration.TextureMode.PerFrame)
-                        {
-                            frame.textureJobHandle.Complete();
-                            frame.texture.LoadRawTextureData<byte>(frame.textureBufferRaw);
-                            frame.texture.Apply(false);
-                            frame.frameMeshRenderer.sharedMaterial.SetTexture("_mainTex", frame.texture);
-                            if(frame.frameMeshRenderer != null)
-                            {
-                                frame.frameMeshRenderer.sharedMaterial.mainTexture = frame.texture;
-                            }
-                        }
-
-                        frame.bufferState = BufferState.Ready;
-                    }
-                } 
-            } 
-
-            else{
-
-                foreach (Frame frame in frameBuffer)
-                {
-                    if(IsFrameBuffered(frame) && frame.bufferState == BufferState.Reading){
-                        frame.bufferState = BufferState.Ready;
-                    }
-                } 
-            }                       
+                if (IsFrameBuffered(frame) && frame.bufferState == BufferState.Reading)
+                    frame.bufferState = BufferState.Ready;
+            }
         }
-
 
         public void SetupFrameForReading(Frame frame, SequenceConfiguration config, int index)
         {
@@ -336,19 +305,6 @@ namespace BuildingVolumes.Streaming
             frame.sequenceConfiguration.geometryType = config.geometryType;
             frame.geoJob = new ReadGeometryJob();
             frame.textureJob = new ReadTextureJob();
-
-        if(Application.isPlaying && config.geometryType != GeometryType.point){
-            frame.frameObject = new GameObject("Stream_Prewarmer");
-            frame.frameObject.transform.parent = streamParent.transform;
-            frame.frameObject.transform.localPosition = new Vector3(0,0,0);
-            frame.frameObject.transform.localRotation = Quaternion.identity;
-            frame.frameObject.transform.localScale = new Vector3(0.001f, 0.001f, 0.001f);
-            frame.frameMeshFilter = frame.frameObject.AddComponent<MeshFilter>();
-            frame.frameMeshFilter.sharedMesh = new Mesh();
-            frame.frameMeshRenderer = frame.frameObject.AddComponent<MeshRenderer>();
-            frame.frameMeshRenderer.material = new Material(materialSource);
-        }
-            
 
             //Allocate every frame with the highest amount of vertices and indices being used in this sequence. 
             //This way, we can re-use the meshArrays, instead of re-allocating them each frame
@@ -376,18 +332,6 @@ namespace BuildingVolumes.Streaming
             else
                 frame.textureBufferRaw = new NativeArray<byte>(1, Allocator.Persistent);
 
-            if(config.textureMode != SequenceConfiguration.TextureMode.None)
-            {
-                if(GetDeviceDependentTextureFormat() == SequenceConfiguration.TextureFormat.DDS)
-                    frame.texture = new Texture2D(config.textureWidth, config.textureHeight, UnityEngine.TextureFormat.DXT1, false);
-                else if (GetDeviceDependentTextureFormat() == SequenceConfiguration.TextureFormat.ASTC)
-                    frame.texture = new Texture2D(config.textureWidth, config.textureHeight, UnityEngine.TextureFormat.ASTC_6x6, false);
-                else
-                {
-                    frame.texture = new Texture2D(1, 1);
-                    Debug.LogError("Invalid texture format!");
-                }
-            }
         }
 
         /// <summary>
@@ -400,7 +344,7 @@ namespace BuildingVolumes.Streaming
             //We want to keep all frames in the buffer, which are one buffersize ahead of
             //the target Frame, as these will be played soon. Outside of that range, all frames can be deleted 
             int targetMaxFrame = targetPlaybackIndex + bufferSize;
-            if(targetMaxFrame >= totalFrames)
+            if (targetMaxFrame >= totalFrames)
                 targetMaxFrame = targetMaxFrame % totalFrames;
 
             for (int i = 0; i < frameBuffer.Length; i++)
@@ -411,7 +355,7 @@ namespace BuildingVolumes.Streaming
                 //If the target max frame has already looped around the ringbuffer
                 if (targetMaxFrame < targetPlaybackIndex)
                 {
-                    if(playbackIndex < targetPlaybackIndex  && playbackIndex > targetMaxFrame)
+                    if (playbackIndex < targetPlaybackIndex && playbackIndex > targetMaxFrame)
                         dispose = true;
                 }
 
@@ -423,12 +367,12 @@ namespace BuildingVolumes.Streaming
 
                 if (dispose)
                 {
-                    if(playbackIndex != lastPlaybackIndex)
+                    if (playbackIndex != lastPlaybackIndex)
                     {
-                        frameBuffer[i].bufferState = BufferState.Empty;                    
+                        frameBuffer[i].bufferState = BufferState.Empty;
                         //Debug.Log("Deleting frame " + playbackIndex + " from Buffer " + i);
                     }
-                }            
+                }
             }
         }
 
@@ -743,7 +687,7 @@ namespace BuildingVolumes.Streaming
             readTextureCmd.Offset = headerSize;
             readTextureCmd.Size = textureSize;
             unsafe { readTextureCmd.Buffer = NativeArrayUnsafeUtility.GetUnsafePtr<byte>(textureRawData); }
-                       
+
 
             readCmd[0] = readTextureCmd;
 

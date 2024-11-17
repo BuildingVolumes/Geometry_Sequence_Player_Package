@@ -81,9 +81,7 @@ namespace BuildingVolumes.Streaming
                     for(int i = 0; i < bufferTotalSize; i++)
                     {
                         GameObject go = Instantiate(frameVizPrefab); 
-                        go.transform.parent = frameVizGrid.transform;
-                        go.transform.localScale = Vector3.one;
-                        go.transform.localPosition = new Vector3(0,0, 0);
+                        go.transform.SetParent(frameVizGrid.transform, false);
                         GSFrameViz viz = go.GetComponent<GSFrameViz>();
                         framesViz.Add(viz);
                     }
@@ -97,7 +95,7 @@ namespace BuildingVolumes.Streaming
                 smoothedFrameTiming = decay * smoothedFrameTiming + (1.0f - decay) * frameTime;
 
                 int playbackFrame =  sourceStream.lastFrameIndex;
-                int bufferIndex = sourceStream.currentFrameBufferIndex;
+                int bufferIndex = sourceStream.lastFrameBufferIndex;
 
                 Frame[] buffer = reader.frameBuffer;
 
@@ -131,9 +129,9 @@ namespace BuildingVolumes.Streaming
                     }
                 }
 
-                if(sourceStream.currentFrameBufferIndex > -1)
+                if(sourceStream.lastFrameBufferIndex > -1)
                 {
-                    framesViz[sourceStream.currentFrameBufferIndex].SetAsShown();
+                    framesViz[sourceStream.lastFrameBufferIndex].SetAsShown();
                 }
 
                 bool bufferedFrameInSuccession = true;

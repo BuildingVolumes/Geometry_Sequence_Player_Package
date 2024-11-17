@@ -125,9 +125,12 @@ namespace BuildingVolumes.Streaming
                 EditorGUILayout.PropertyField(smoothedFPS, new GUIContent("Smoothed FPS"));
                 EditorGUI.EndDisabledGroup();
 
-                EditorGUILayout.PropertyField(attachFrameDebugger, new GUIContent("Attach Editor Frame Debugger"));
+                GUILayout.Space(10);
+                GUILayout.Label("Frame Debugger", EditorStyles.boldLabel);
+
+                EditorGUILayout.PropertyField(attachFrameDebugger, new GUIContent("Attach debugger (Editor only)"));
                 EditorGUI.BeginDisabledGroup(attachFrameDebugger.boolValue);
-                EditorGUILayout.PropertyField(frameDebugger);
+                EditorGUILayout.PropertyField(frameDebugger, new GUIContent("Manually attach debugger"));
 
             }           
 

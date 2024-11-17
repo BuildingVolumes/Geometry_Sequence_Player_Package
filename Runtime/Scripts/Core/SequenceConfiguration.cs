@@ -29,20 +29,20 @@ namespace BuildingVolumes.Streaming
 
 
 
-        public static SequenceConfiguration LoadConfigFromFile(string pathToSequenceDir)
+        public static SequenceConfiguration LoadConfigFromFile(string path)
         {
             string content = "";
 
-            string pathToFile = pathToSequenceDir + "/" + "sequence.json";
+            path = path + "/sequence.json";
 
-            if (File.Exists(pathToFile) && pathToFile.Length > 0)
+            if (File.Exists(path) && path.Length > 0)
             {
-                content = File.ReadAllText(pathToFile);
+                content = File.ReadAllText(path);
             }
 
             else
             {
-                Debug.LogError("Could not find sequence.json metadata file at: " + pathToFile);
+                Debug.LogError("Could not find sequence.json metadata file at: " + path);
                 return null;
             }
 

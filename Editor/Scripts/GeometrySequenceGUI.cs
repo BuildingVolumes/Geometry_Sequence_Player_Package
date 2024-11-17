@@ -1,10 +1,6 @@
 using UnityEditor;
 using UnityEngine;
 using System.IO;
-using System.Data;
-using System;
-using System.Reflection;
-using System.Runtime.InteropServices.ComTypes;
 
 namespace BuildingVolumes.Streaming
 {
@@ -13,7 +9,6 @@ namespace BuildingVolumes.Streaming
     [CanEditMultipleObjects]
     public class GeometrySequenceGUI : Editor
     {
-
         SerializedProperty relativePath;
         SerializedProperty pathToSequence;
         SerializedProperty pathRelation;
@@ -39,7 +34,7 @@ namespace BuildingVolumes.Streaming
 
             GeometrySequencePlayer player = (GeometrySequencePlayer)target;
             player.SetupGeometryStream();
-            
+
 
             serializedObject.ApplyModifiedProperties();
         }
@@ -47,7 +42,7 @@ namespace BuildingVolumes.Streaming
         public override void OnInspectorGUI()
         {
             serializedObject.Update();
-            
+
             GeometrySequencePlayer player = (GeometrySequencePlayer)target;
             Texture2D logo = (Texture2D)Resources.Load("gss_logo");
             GUIStyle style = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleCenter };
@@ -58,12 +53,12 @@ namespace BuildingVolumes.Streaming
 
             EditorGUILayout.PropertyField(pathRelation);
 
-            relativePath.stringValue =  GUILayout.TextField(relativePath.stringValue);
+            relativePath.stringValue = GUILayout.TextField(relativePath.stringValue);
 
             bool openSequence = false; //Workaround for a Unity GUI bug (EndLayoutGroup: BeginLayoutGroup must be called first)
             GUILayout.BeginHorizontal();
             if (GUILayout.Button("Open Sequence"))
-                openSequence = true;                
+                openSequence = true;
 
             if (GUILayout.Button("Clear", GUILayout.Width(50)))
             {
@@ -74,57 +69,63 @@ namespace BuildingVolumes.Streaming
 
             if (openSequence)
             {
-                string path = EditorUtility.OpenFolderPanel("Open a folder that contains a Geometry Sequence", relativePath.stringValue, "");
+                string path = EditorUtility.OpenFilePanel("Select the sequence.json file inside your sequence folder", relativePath.stringValue, "json");
 
                 if (path != null)
                 {
-                    if (Directory.Exists(path))
+                    if (path.Length > 0)
                     {
-                        if (Directory.GetFiles(path, "*.ply").Length > 0)
-                        {
-                            if(File.Exists(path + "/sequence.json"))
-                            {
-                                if (path.Contains("StreamingAssets"))
-                                {
-                                    relativePath.stringValue = Path.GetRelativePath(Application.streamingAssetsPath, path);
-                                    pathRelation.enumValueFlag = (int)GeometrySequenceStream.PathType.RelativeToStreamingAssets;
-                                }
+                        path = Path.GetDirectoryName(path);
 
-                                else if (path.Contains(Application.dataPath))
+                        if (Directory.Exists(path))
+                        {
+                            if (Directory.GetFiles(path, "*.ply").Length > 0)
+                            {
+                                if (File.Exists(path + "/sequence.json"))
                                 {
-                                    relativePath.stringValue = Path.GetRelativePath(Application.dataPath, path);
-                                    pathRelation.enumValueFlag = (int)GeometrySequenceStream.PathType.RelativeToDataPath;
+                                    if (path.Contains("StreamingAssets"))
+                                    {
+                                        relativePath.stringValue = Path.GetRelativePath(Application.streamingAssetsPath, path);
+                                        pathRelation.enumValueFlag = (int)GeometrySequenceStream.PathType.RelativeToStreamingAssets;
+                                    }
+
+                                    else if (path.Contains(Application.dataPath))
+                                    {
+                                        relativePath.stringValue = Path.GetRelativePath(Application.dataPath, path);
+                                        pathRelation.enumValueFlag = (int)GeometrySequenceStream.PathType.RelativeToDataPath;
+                                    }
+
+                                    else
+                                    {
+                                        relativePath.stringValue = path;
+                                        pathRelation.enumValueFlag = (int)GeometrySequenceStream.PathType.AbsolutePath;
+                                    }
+
+                                    player.ShowThumbnail(path);
                                 }
 
                                 else
                                 {
-                                    relativePath.stringValue = path;
-                                    pathRelation.enumValueFlag = (int)GeometrySequenceStream.PathType.AbsolutePath;
+                                    EditorUtility.DisplayDialog("Metafile not found", "Could not find sequence.json metadata file, which is required since version 1.1.0 of the plugin. Please download the new v1.1.0 converter tool and re-convert your sequences with it to create the metadata!", "Okay");
                                 }
-
-                                player.ShowThumbnail(path);
                             }
 
                             else
                             {
-                                EditorUtility.DisplayDialog("Metafile not found", "Could not find sequence.json metadata file, which is required since version 1.1.0 of the plugin. Please download the new v1.1.0 converter tool and re-convert your sequences with it to create the metadata!", "Okay");
+                                EditorUtility.DisplayDialog("Folder not valid", "Could not find any sequence file in the choosen folder!" +
+                                                            " Pick another folder, or convert your Geometry Sequence into the correct format with the included converter.",
+                                                            "Got it!");
                             }
                         }
 
-                        else
-                        {
-                            EditorUtility.DisplayDialog("Folder not valid", "Could not find any sequence file in the choosen folder!" +
-                                                        " Pick another folder, or convert your Geometry Sequence into the correct format with the included converter.",
-                                                        "Got it!");
-                        }
                     }
                 }
             }
 
 #if !UNITY_ANDROID
-            if(pathRelation.enumValueIndex != (int)GeometrySequenceStream.PathType.RelativeToStreamingAssets && relativePath.stringValue.Length > 1)
+            if (pathRelation.enumValueIndex != (int)GeometrySequenceStream.PathType.RelativeToStreamingAssets && relativePath.stringValue.Length > 1)
             {
-                EditorGUILayout.HelpBox("Files are not placed in the StreamingAsset folder. The playback will work on your PC, but likely not if you build/export the project to other devices. More information here:", MessageType.Warning);
+                EditorGUILayout.HelpBox("Files are not placed in the StreamingAsset folder. The playback will still work on your PC, but likely not if you build/export the project to other devices. More information here:", MessageType.Warning);
 
                 if (GUILayout.Button("Open Documentation"))
                 {
@@ -187,7 +188,7 @@ namespace BuildingVolumes.Streaming
                     GUI.contentColor = originalColor;
                 }
 
-                    frameDropShowCounter += Time.deltaTime;
+                frameDropShowCounter += Time.deltaTime;
 
                 GUILayout.EndHorizontal();
             }
@@ -229,11 +230,16 @@ namespace BuildingVolumes.Streaming
             else
             {
                 if (GUILayout.Button(EditorGUIUtility.IconContent("Animation.Play")))
-                    player.Play();
+                {
+                    if(player.IsInitialized())
+                        player.Play();
+                    else
+                        player.LoadCurrentSequence(true);
+                }
             }
 
             //Goes a few frames forward
-            if (GUILayout.Button(EditorGUIUtility.IconContent("Profiler.LastFrame"))) 
+            if (GUILayout.Button(EditorGUIUtility.IconContent("Profiler.LastFrame")))
                 player.GoToFrame(player.GetCurrentFrameIndex() + (int)targetFPS.floatValue);
 
             GUILayout.EndHorizontal();

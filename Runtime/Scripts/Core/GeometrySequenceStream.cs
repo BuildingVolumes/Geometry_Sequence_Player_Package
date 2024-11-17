@@ -40,12 +40,12 @@ namespace BuildingVolumes.Streaming
         BufferedGeometryReader thumbnailReader;
         Texture2D thumbnailTexture;
 
-        bool readerInitialized = false;
+        public bool readerInitialized = false;
 
         public bool frameDropped = false;
         public int framesDroppedCounter = 0;
 
-        public int currentFrameBufferIndex = 0;
+        public int lastFrameBufferIndex = 0;
         public float targetFrameTimeMs = 0;
         public float lastFrameTime = 0;
         public int lastFrameIndex;
@@ -106,9 +106,8 @@ namespace BuildingVolumes.Streaming
         public bool ChangeSequence(string absolutePathToSequence, float playbackFPS)
         {
             CleanupSequence();
-            readerInitialized = false;
             lastFrameIndex = -1;
-            currentFrameBufferIndex = -1;
+            lastFrameBufferIndex = -1;
 
             pathToSequence = absolutePathToSequence;
 
@@ -116,6 +115,7 @@ namespace BuildingVolumes.Streaming
                 return readerInitialized;
 
             bufferedReader = new BufferedGeometryReader(streamedMeshObject, meshMaterial);
+
             if (!bufferedReader.SetupReader(pathToSequence, bufferSize))
                 return readerInitialized;
 
@@ -126,7 +126,7 @@ namespace BuildingVolumes.Streaming
             {
                     bufferedReader.SetupFrameForReading(bufferedReader.frameBuffer[0], bufferedReader.sequenceConfig, 0);
                     bufferedReader.ScheduleTextureReadJob(bufferedReader.frameBuffer[0], bufferedReader.GetDeviceDependendentTexturePath(0));
-                    //ShowTextureData(bufferedReader.frameBuffer[0], texture);
+                    ShowTextureData(bufferedReader.frameBuffer[0], streamedMeshRenderer, texture);
             }
 
             targetFrameTimeMs = 1000f / (float)playbackFPS;
@@ -136,7 +136,8 @@ namespace BuildingVolumes.Streaming
             return readerInitialized;
         }
 
-        public void UpdateFrame(float playbackTimeInMs)
+
+        public void UpdateFrame()
         {
             if (!readerInitialized)
                 return;
@@ -180,22 +181,21 @@ namespace BuildingVolumes.Streaming
                 if (newBufferIndex > -1)
                 {
                     //Now that we a show a new frame, we mark the old played frame as consumed, and the new frame as playing
-                    if(currentFrameBufferIndex > -1)
-                        bufferedReader.frameBuffer[currentFrameBufferIndex].bufferState = BufferState.Consumed;
+                    if(lastFrameBufferIndex > -1)
+                        bufferedReader.frameBuffer[lastFrameBufferIndex].bufferState = BufferState.Consumed;
                     
                     bufferedReader.frameBuffer[newBufferIndex].bufferState = BufferState.Playing;
-                    currentFrameBufferIndex = newBufferIndex;
+                    ShowFrameData(bufferedReader.frameBuffer[newBufferIndex], streamedMeshFilter, streamedMeshRenderer, pointcloudRenderer, bufferedReader.sequenceConfig, texture);
+                    lastFrameBufferIndex = newBufferIndex;
                     lastFrameIndex = targetFrameIndex;
 
-                    ShowFrameData(bufferedReader.frameBuffer[currentFrameBufferIndex], pointcloudRenderer, bufferedReader.sequenceConfig, texture);
-
-                    //Performance tracking
-                    
-                    //If we are lagging behind, but have sucessfully catched up to the current target frame
+                    //Sometimes, the system might struggle to render a frame, or the application has a low framerate in general
+                    //For performance tracking, we need to decouple the application framerate from our stream framerate. 
+                    //If we are lagging behind due to these reasons, but have sucessfully catched up to the current target frame
                     //we still hit our target time window and the stream is performing well
-                    //Therfore we substract the dropped frames from our deltatime
+                    //Therefore we substract the dropped frames from our deltatime
 
-                    if(frameDropped && framesInAdvance > 1)
+                    if (frameDropped && framesInAdvance > 1)
                         sequenceDeltaTime -= (framesInAdvance - 1) * targetFrameTimeMs; 
 
                     float decay = 0.9f;
@@ -212,39 +212,25 @@ namespace BuildingVolumes.Streaming
              }
 
             //TODO: Buffering callback
+        }
 
+        public void SetFrameTime(float frameTimeMS)
+        {
+            elapsedMsSinceSequenceStart = frameTimeMS;
+            lastFrameIndex = (int)(frameTimeMS / targetFrameTimeMs);
+            UpdateFrame();
         }
 
         /// <summary>
         /// Display mesh and texture data from a frame buffer
         /// </summary>
         /// <param name="frame"></param>
-        public void ShowFrameData(Frame frame, PointcloudRenderer pcRenderer, SequenceConfiguration config, Texture2D texture)
+        public void ShowFrameData(Frame frame, MeshFilter meshfilter, MeshRenderer meshRenderer, PointcloudRenderer pcRenderer, SequenceConfiguration config, Texture2D texture)
         {
-
-            if(config.geometryType != SequenceConfiguration.GeometryType.point)
-            {
-                foreach(Frame f in bufferedReader.frameBuffer)
-                    {
-                        f.frameObject.transform.localScale = new Vector3(0.001f, 0.001f, 0.001f);
-                    }
-
-                frame.frameObject.transform.localScale = Vector3.one;
-
-                ShowGeometryData(frame, frame.frameMeshFilter, pcRenderer, config);
-            }
-
-            else
-            {
-                ShowGeometryData(frame, streamedMeshFilter, pcRenderer, config);
-            }
-                
-
-            
-
+            ShowGeometryData(frame, meshfilter, pcRenderer, config);       
 
             if (config.textureMode == SequenceConfiguration.TextureMode.PerFrame)
-                //ShowTextureData(frame);
+                ShowTextureData(frame, meshRenderer, texture);
 
             frame.finishedBufferingTime = 0;
         }
@@ -288,9 +274,11 @@ namespace BuildingVolumes.Streaming
         /// Uploads texture data from a frame buffer to GPU
         /// </summary>
         /// <param name="frame"></param>
-        void ShowTextureData(Frame frame, Texture2D texture)
+        void ShowTextureData(Frame frame, MeshRenderer renderer, Texture2D texture)
         {
-            ApplyTextureToMaterial(streamedMeshRenderer.sharedMaterial, frame.texture, materialSlots, customMaterialSlots);
+            frame.textureJobHandle.Complete();
+            texture.LoadRawTextureData<byte>(frame.textureBufferRaw);
+            texture.Apply();
         }
 
         /// <summary>
@@ -361,7 +349,6 @@ namespace BuildingVolumes.Streaming
             if (!CheckMaterials())
                 return false;
            
-
             if (pc)
                 SetPointcloudMaterial(pointType, renderer);
             else
@@ -432,8 +419,6 @@ namespace BuildingVolumes.Streaming
                 if (mat.HasProperty("_MainTex"))
                     mat.SetTexture("_MainTex", tex);
 
-                Vector2 scale = mat.GetTextureScale("_MainTex");
-                mat.SetTextureScale("_MainTex", new Vector2(scale.x, scale.y * -1));
             }
                     
 
@@ -442,17 +427,12 @@ namespace BuildingVolumes.Streaming
                 if (mat.HasProperty("_EmissionMap"))
                     mat.SetTexture("_EmissionMap", tex);
 
-                Vector2 scale = mat.GetTextureScale("_EmissionMap");
-                mat.SetTextureScale("_EmissionMap", new Vector2(scale.x, scale.y * -1));
             }                
 
             if ((MaterialProperties.Detail & properties) == MaterialProperties.Detail)
             {
                 if (mat.HasProperty("_DetailAlbedoMap"))
                     mat.SetTexture("_DetailAlbedoMap", tex);
-
-                Vector2 scale = mat.GetTextureScale("_DetailAlbedoMap");
-                mat.SetTextureScale("_DetailAlbedoMap", new Vector2(scale.x, scale.y * -1));
             }                
 
             foreach (string prop in customProperties)
@@ -460,9 +440,10 @@ namespace BuildingVolumes.Streaming
                 if(mat.HasProperty(prop))
                     mat.SetTexture(prop, tex);
 
-                Vector2 scale = mat.GetTextureScale(prop);
-                mat.SetTextureScale(prop, new Vector2(scale.x, scale.y * -1));
             }
+
+            Vector2 scale = mat.GetTextureScale("_MainTex");
+            mat.SetTextureScale("_MainTex", new Vector2(scale.x, scale.y * -1));
         }
 
         public void SetPointcloudMaterial(PointType type, MeshRenderer renderer)
@@ -511,6 +492,8 @@ namespace BuildingVolumes.Streaming
                 bufferedReader.DisposeFrameBuffer(true);
             }
 
+            readerInitialized = false;
+
             CleanupMeshAndTexture();
         }
 
@@ -522,6 +505,8 @@ namespace BuildingVolumes.Streaming
             if (texture != null)
                 Destroy(texture);
         }
+
+
 
         [ExecuteInEditMode]
         void OnDestroy()
@@ -578,10 +563,10 @@ namespace BuildingVolumes.Streaming
                 if (thumbnailReader.sequenceConfig.textureMode != SequenceConfiguration.TextureMode.None)
                 {
                     thumbnailReader.ScheduleTextureReadJob(thumbnail, thumbnailReader.GetDeviceDependendentTexturePath(0));
-                    ShowTextureData(thumbnail, thumbnailTexture);
+                    ShowTextureData(thumbnail, thumbnailMeshRenderer, thumbnailTexture);
                 }
 
-                ShowFrameData(thumbnail, thumbnailMeshFilter, thumbnailPCRenderer, thumbnailReader.sequenceConfig, thumbnailTexture);
+                ShowFrameData(thumbnail, thumbnailMeshFilter, thumbnailMeshRenderer, thumbnailPCRenderer, thumbnailReader.sequenceConfig, thumbnailTexture);
             }
         }
 

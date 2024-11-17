@@ -7,7 +7,7 @@ using UnityEngine;
 namespace BuildingVolumes.Streaming
 {
     //Thumbnails are dynamically loaded each time the scene is opened, so that they 
-    //won't need to be saved in the scene, which might make the scene file huge
+    //won't need to be saved in the scene file.
     //This class helps to detect when a thumbnail load is neccessary
 
     [InitializeOnLoad]

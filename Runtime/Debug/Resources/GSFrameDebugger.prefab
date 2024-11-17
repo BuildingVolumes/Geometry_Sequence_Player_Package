@@ -2266,7 +2266,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 4630485526263809843}
-  - component: {fileID: 5245852676323005594}
+  - component: {fileID: 5782866209738991274}
   m_Layer: 0
   m_Name: GSFrameDebugger
   m_TagString: Untagged
@@ -2290,7 +2290,7 @@ Transform:
   - {fileID: 438249740825074317}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &5245852676323005594
+--- !u!114 &5782866209738991274
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -2299,7 +2299,7 @@ MonoBehaviour:
   m_GameObject: {fileID: 7153186308444552328}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 9cafb26d691f340d8ab7b1564fced2af, type: 3}
+  m_Script: {fileID: 11500000, guid: 6fc818c066f8f154197f38f30fb57243, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
   framerateLimit: 0
@@ -2319,7 +2319,8 @@ MonoBehaviour:
   framesReading_TMP: {fileID: 2815961480153425255}
   framesLoading_TMP: {fileID: 8357352107029687696}
   frameVizGrid: {fileID: 6375446156045816449}
-  frameVizPrefab: {fileID: 7958729491525454814, guid: 063ed035ba8d546cbb7e29561440791f, type: 3}
+  frameVizPrefab: {fileID: 7958729491525454814, guid: a7fcb73becd77e043b05f429fe14a5e3,
+    type: 3}
 --- !u!1 &7171327666223821849
 GameObject:
   m_ObjectHideFlags: 0

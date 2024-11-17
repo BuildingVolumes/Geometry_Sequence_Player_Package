@@ -38,7 +38,7 @@ namespace BuildingVolumes.Streaming
             double currentTime = playable.GetTime<Playable>();
 
             if(streamIsReady)
-                stream.UpdateFrame((float)currentTime * 1000);
+                stream.UpdateFrame();
         }
 
         //Playback start

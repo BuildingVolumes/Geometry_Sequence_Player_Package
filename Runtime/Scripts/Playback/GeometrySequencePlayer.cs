@@ -47,7 +47,6 @@ namespace BuildingVolumes.Streaming
         /// </summary>
         public void SetupGeometryStream()
         {
-            //
             if (stream == null)
             {
                 stream = gameObject.GetComponent<GeometrySequenceStream>();
@@ -80,7 +79,7 @@ namespace BuildingVolumes.Streaming
                     }
                 }
 
-                stream.UpdateFrame(playbackTimeMs);
+                stream.UpdateFrame();
 
                 if (GetFrameDropped())
                     playbackEvents.Invoke(this, GSPlayerEvents.FrameDropped);
@@ -126,7 +125,7 @@ namespace BuildingVolumes.Streaming
                 if (buffer || autoplay)
                 {
                     playbackEvents.Invoke(this, GSPlayerEvents.BufferingStarted);
-                    stream.bufferedReader.BufferFrames(0);
+                    stream.bufferedReader.BufferFrames(0, 0);
                     StartCoroutine(WaitForBufferingCompleted(autoplay));
                 }
             }
@@ -151,11 +150,11 @@ namespace BuildingVolumes.Streaming
         }
 
         /// <summary>
-        /// Start Playback from the current location
+        /// Start Playback from the current location. 
         /// </summary>
         public void Play()
         {
-            play = true;
+            play = true;                
         }
 
         /// <summary>
@@ -234,14 +233,9 @@ namespace BuildingVolumes.Streaming
                 return false;
 
             playbackTimeMs = timeInSeconds * 1000;
+            stream.SetFrameTime(playbackTimeMs);
+            return true;
 
-            if (!play)
-            {
-                stream.UpdateFrame(playbackTimeMs);
-                return true;
-            }
-
-            return false;
         }
 
         /// <summary>
@@ -298,6 +292,15 @@ namespace BuildingVolumes.Streaming
         }
 
         /// <summary>
+        /// Is a sequence currently loaded and ready to play?
+        /// </summary>
+        /// <returns></returns>
+        public bool IsInitialized()
+        {
+            return stream.readerInitialized;
+        }
+
+        /// <summary>
         /// Get the location to to which the relativePath is relative to.
         /// </summary>
         /// <returns>The relative location.</returns>
@@ -331,7 +334,7 @@ namespace BuildingVolumes.Streaming
         public int GetCurrentFrameIndex()
         {
             if (stream != null)
-                return stream.currentFrameIndex;
+                return stream.lastFrameIndex ;
             return -1;
         }
 
