@@ -325,7 +325,7 @@ namespace BuildingVolumes.Streaming
                 else
                 {
                     texture = new Texture2D(1, 1);
-                    Debug.LogError("Invalid texture format!");
+                    Debug.LogError("Could not determine correct texture format for this platform!");
                 }
             }
 
