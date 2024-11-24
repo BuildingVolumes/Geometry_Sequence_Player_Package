@@ -50,7 +50,7 @@ namespace BuildingVolumes.Streaming
                 return;
 
             sourcePointCount = sourceCount;
-            NativeArray<byte> pointdataGPU = pointSourceBuffer.LockBufferForWrite<byte>(0, pointSourceBuffer.count); //Locking buffer is faster than GraphicsBuffer.SetData;
+            NativeArray<byte> pointdataGPU = pointSourceBuffer.LockBufferForWrite<byte>(0, pointSourceBuffer.count * 4 * 4); //Locking buffer is faster than GraphicsBuffer.SetData;
             pointSource.CopyTo(pointdataGPU);
             pointSourceBuffer.UnlockBufferAfterWrite<byte>(pointSource.Length);
             computeShader.SetInt(pointCountID, sourcePointCount);
@@ -121,7 +121,7 @@ namespace BuildingVolumes.Streaming
             ReleaseSmallBuffers();
 
             rotateToCameraMat = new GraphicsBuffer(GraphicsBuffer.Target.Structured, 1, 4 * 4 * 4);
-            pointSourceBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Raw, GraphicsBuffer.UsageFlags.LockBufferForWrite,  maxPointCount * 4 * 4, 4 * 4);
+            pointSourceBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Raw, GraphicsBuffer.UsageFlags.LockBufferForWrite,  maxPointCount, 4 * 4);
 
             if (computeShader == null)
                 computeShader = Resources.Load("PointcloudCompute") as ComputeShader;
