@@ -1,30 +1,32 @@
-using Unity.Collections;
 using UnityEditor;
 using UnityEngine;
-using UnityEngine.Profiling;
 using UnityEngine.Rendering;
-
-
+using Unity.Collections;
 namespace BuildingVolumes.Streaming
-{    public class PointcloudRenderer : MonoBehaviour
+{
+    public class PointcloudRenderer : MonoBehaviour, IPointCloudRenderer
     {
-        [HideInInspector] public ComputeShader computeShader;
-        [HideInInspector] public float pointScale = 0.005f;
+        private ComputeShader computeShader;
+        private float pointScale = 0.005f;
 
         GraphicsBuffer pointSourceBuffer;
         GraphicsBuffer vertexBuffer;
         GraphicsBuffer indexBuffer;
-
         GraphicsBuffer rotateToCameraMat;
+
+        GameObject pcObject;
+        MeshFilter pcMeshFilter;
+        MeshRenderer pcMeshRenderer;
+        Mesh pcMesh;
+
+        Material pcMaterialQuads;
+        Material pcMaterialCircles;
+        Material pcMaterialSplats;
+
+        Camera cam;
 
         int sourcePointCount;
         bool isDataSet;
-
-        MeshFilter outputMeshFilter;
-        Mesh outputMesh;
-        Camera cam;
-
-        public float angle;
 
         static readonly int vertexBufferID = Shader.PropertyToID("_VertexBuffer");
         static readonly int pointSourceID = Shader.PropertyToID("_PointSourceBuffer");
@@ -33,10 +35,71 @@ namespace BuildingVolumes.Streaming
         static readonly int pointScaleID = Shader.PropertyToID("_PointScale");
         static readonly int pointCountID = Shader.PropertyToID("_PointCount");
 
-
-        private void Update()
+        /// <summary>
+        /// Prepares all buffers used for pointcloud rendering. This needs to be executed once per sequence
+        /// All buffers will be allocated with the max. possible size that can appear in the sequence to avoid
+        /// re-allocations
+        /// </summary>
+        /// <param name="maxPointCount">The max. numbers of point that will be shown in any frame of the sequence</param>
+        /// <param name="meshfilter">The mesh filter which will contains the final mesh of the pointclouds</param>
+        /// <param name="pointSize">The diameter of the points in Unity units</param>
+        /// <returns></returns>
+        public void Setup(SequenceConfiguration configuration, Transform parent, float pointSize, GeometrySequenceStream.PointType pointType)
         {
-            Render();
+            Dispose();
+
+            pcObject = CreateStreamObject("PointcloudRenderer", parent);
+
+            pcMeshFilter = pcObject.GetComponent<MeshFilter>();
+            if (pcMeshFilter == null)
+                pcMeshFilter = pcObject.AddComponent<MeshFilter>();
+
+            pcMeshRenderer = pcObject.GetComponent<MeshRenderer>();
+            if (pcMeshRenderer == null)
+                pcMeshRenderer = pcObject.AddComponent<MeshRenderer>();
+
+            if (pcMeshFilter.sharedMesh == null)
+                pcMeshFilter.sharedMesh = new Mesh();
+
+            pcMeshFilter.hideFlags = HideFlags.HideAndDontSave;
+            pcMeshRenderer.hideFlags = HideFlags.HideAndDontSave;
+
+            pcMesh = pcMeshFilter.sharedMesh;
+            pcMesh.bounds = configuration.GetBounds();
+
+            if (computeShader == null)
+                computeShader = Resources.Load("PointcloudCompute") as ComputeShader;
+
+            rotateToCameraMat = new GraphicsBuffer(GraphicsBuffer.Target.Structured, 1, 4 * 4 * 4);
+            pointSourceBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Raw, GraphicsBuffer.UsageFlags.LockBufferForWrite, configuration.maxVertexCount, 4 * 4);
+
+            pcMesh.indexBufferTarget |= GraphicsBuffer.Target.Raw;
+            pcMesh.vertexBufferTarget |= GraphicsBuffer.Target.Raw;
+
+            VertexAttributeDescriptor vp = new VertexAttributeDescriptor(VertexAttribute.Position, VertexAttributeFormat.Float32, 3);
+            VertexAttributeDescriptor vc = new VertexAttributeDescriptor(VertexAttribute.Color, VertexAttributeFormat.UNorm8, 4);
+            VertexAttributeDescriptor vt = new VertexAttributeDescriptor(VertexAttribute.TexCoord0, VertexAttributeFormat.Float32, 2);
+
+            pcMesh.SetVertexBufferParams(configuration.maxVertexCount * 4, vp, vc, vt);
+            pcMesh.SetIndexBufferParams(configuration.maxVertexCount * 6, IndexFormat.UInt32);
+            pcMesh.SetSubMesh(0, new SubMeshDescriptor(0, configuration.maxVertexCount * 6), MeshUpdateFlags.DontRecalculateBounds);
+
+            vertexBuffer = pcMesh.GetVertexBuffer(0);
+            indexBuffer = pcMesh.GetIndexBuffer();
+
+            computeShader.SetBuffer(0, vertexBufferID, vertexBuffer);
+            computeShader.SetBuffer(0, indexBufferID, indexBuffer);
+            computeShader.SetBuffer(0, rotateToCameraID, rotateToCameraMat);
+            computeShader.SetBuffer(0, pointSourceID, pointSourceBuffer);
+
+            LoadMaterials();
+            SetPointcloudMaterial(pointType);
+            SetPointSize(pointSize);
+
+#if UNITY_EDITOR
+            if (!Application.isPlaying)
+                StartEditorLife();
+#endif
         }
 
         /// <summary>
@@ -44,24 +107,29 @@ namespace BuildingVolumes.Streaming
         /// </summary>
         /// <param name="pointSource">The point positions and colors as a native array</param>
         /// <param name="sourceCount">The amount of points contained in the array</param>
-        public void SetPointcloudData(NativeArray<byte> pointSource, int sourceCount)
+        public void RenderFrame(Frame frame)
         {
             if (!enabled)
                 return;
-
-            sourcePointCount = sourceCount;
+            frame.geoJobHandle.Complete();
+            sourcePointCount = frame.geoJob.vertexCount;
             NativeArray<byte> pointdataGPU = pointSourceBuffer.LockBufferForWrite<byte>(0, pointSourceBuffer.count * 4 * 4); //Locking buffer is faster than GraphicsBuffer.SetData;
-            pointSource.CopyTo(pointdataGPU);
-            pointSourceBuffer.UnlockBufferAfterWrite<byte>(pointSource.Length);
+            frame.geoJob.vertexBuffer.CopyTo(pointdataGPU);
+            pointSourceBuffer.UnlockBufferAfterWrite<byte>(frame.geoJob.vertexBuffer.Length);
             computeShader.SetInt(pointCountID, sourcePointCount);
             isDataSet = true;
+        }
+
+        private void Update()
+        {
+            Render();
         }
 
         /// <summary>
         /// Renders the currently set pointcloud to the screen. This process is sensitive to the camera used for rendering,
         /// as the points always need to be oriented towards the camera.
         /// </summary>
-        public void Render()
+        void Render()
         {
             if (!isDataSet || !enabled)
                 return;
@@ -72,7 +140,7 @@ namespace BuildingVolumes.Streaming
             if (cam == null)
                 cam = Camera.main;
 
-            if(cam == null)
+            if (cam == null)
             {
                 Debug.LogError("Could not find main camera. Please tag one camera as Main Camera for the Pointcloud renderer to work");
                 return;
@@ -105,85 +173,83 @@ namespace BuildingVolumes.Streaming
             }
 #endif
         }
-        
-        /// <summary>
-        /// Prepares all buffers used for pointcloud rendering. This needs to be executed once per sequence
-        /// All buffers will be allocated with the max. possible size that can appear in the sequence to avoid
-        /// re-allocations
-        /// </summary>
-        /// <param name="maxPointCount">The max. numbers of point that will be shown in any frame of the sequence</param>
-        /// <param name="renderToMeshFilter">The mesh filter which will contains the final mesh of the pointclouds</param>
-        /// <param name="pointSize">The diameter of the points in Unity units</param>
-        /// <returns></returns>
-        public int SetupPointcloudRenderer(int maxPointCount, MeshFilter renderToMeshFilter, float pointSize)
+
+        GameObject CreateStreamObject(string name, Transform parent)
         {
-            ReleaseLargeBuffers();
-            ReleaseSmallBuffers();
-
-            rotateToCameraMat = new GraphicsBuffer(GraphicsBuffer.Target.Structured, 1, 4 * 4 * 4);
-            pointSourceBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Raw, GraphicsBuffer.UsageFlags.LockBufferForWrite,  maxPointCount, 4 * 4);
-
-            if (computeShader == null)
-                computeShader = Resources.Load("PointcloudCompute") as ComputeShader;
-
-            outputMeshFilter = renderToMeshFilter;
-
-            if (outputMeshFilter.sharedMesh == null)
-                outputMeshFilter.sharedMesh = new Mesh();
-
-            outputMesh = outputMeshFilter.sharedMesh;
-
-            outputMesh.indexBufferTarget |= GraphicsBuffer.Target.Raw;
-            outputMesh.vertexBufferTarget |= GraphicsBuffer.Target.Raw;
-
-            VertexAttributeDescriptor vp = new VertexAttributeDescriptor(VertexAttribute.Position, VertexAttributeFormat.Float32, 3);
-            VertexAttributeDescriptor vc = new VertexAttributeDescriptor(VertexAttribute.Color, VertexAttributeFormat.UNorm8, 4);
-            VertexAttributeDescriptor vt = new VertexAttributeDescriptor(VertexAttribute.TexCoord0, VertexAttributeFormat.Float32, 2);
-
-            outputMesh.SetVertexBufferParams(maxPointCount * 4, vp, vc, vt);
-            outputMesh.SetIndexBufferParams(maxPointCount * 6, IndexFormat.UInt32);
-
-            outputMesh.SetSubMesh(0, new SubMeshDescriptor(0, maxPointCount * 6), MeshUpdateFlags.DontRecalculateBounds);
-
-            vertexBuffer = outputMesh.GetVertexBuffer(0);
-            indexBuffer = outputMesh.GetIndexBuffer();
-
-            computeShader.SetBuffer(0, vertexBufferID, vertexBuffer);
-            computeShader.SetBuffer(0, indexBufferID, indexBuffer);
-            computeShader.SetBuffer(0, rotateToCameraID, rotateToCameraMat);
-            computeShader.SetBuffer(0, pointSourceID, pointSourceBuffer);
-            SetPointSize(pointSize);
-
-
-#if UNITY_EDITOR
-            if (!Application.isPlaying)
-                StartEditorLife();
-#endif
-            return maxPointCount;
+            GameObject newStreamObject = new GameObject(name);
+            newStreamObject.transform.parent = this.transform;
+            newStreamObject.transform.localPosition = Vector3.zero;
+            newStreamObject.transform.localRotation = Quaternion.identity;
+            newStreamObject.transform.localScale = Vector3.one;
+            newStreamObject.hideFlags = HideFlags.DontSave;
+            return newStreamObject;
         }
 
-        private void OnDisable()
+        public void SetPointcloudMaterial(GeometrySequenceStream.PointType type)
         {
-            ReleaseSmallBuffers();
-            ReleaseLargeBuffers();
+            pcMeshRenderer.sharedMaterial = GetPointcloudMaterialFromType(type);
         }
 
+        public Material GetPointcloudMaterialFromType(GeometrySequenceStream.PointType type)
+        {
+            switch (type)
+            {
+                case GeometrySequenceStream.PointType.Quads:
+                    return pcMaterialQuads;
+                case GeometrySequenceStream.PointType.Circles:
+                    return pcMaterialCircles;
+                case GeometrySequenceStream.PointType.SplatsExperimental:
+                    return pcMaterialSplats;
+                default:
+                    return null;
+            }
+        }
 
-        void ReleaseLargeBuffers()
+        public void Show()
+        {
+            pcMeshRenderer.enabled = true;
+        }
+
+        public void Hide()
+        {
+            pcMeshRenderer.enabled = false;
+        }
+
+        public void LoadMaterials()
+        {
+            //Fill up material slots with default materials
+            if (pcMaterialQuads == null)
+                pcMaterialQuads = Resources.Load("GS_Quads") as Material;
+
+            if (pcMaterialCircles == null)
+                pcMaterialCircles = Resources.Load("GS_Circles") as Material;
+
+            if (pcMaterialSplats == null)
+                pcMaterialSplats = Resources.Load("GS_SplatsExperimental") as Material;
+        }
+
+        [ExecuteInEditMode]
+        private void OnDestroy()
+        {
+            Dispose();
+        }
+
+        public void Dispose()
         {
             if (vertexBuffer != null)
                 vertexBuffer.Release();
-            if(pointSourceBuffer != null)            
+            if (pointSourceBuffer != null)
                 pointSourceBuffer.Release();
-            if(indexBuffer != null)
+            if (indexBuffer != null)
                 indexBuffer.Release();
-            
-        }
-
-        void ReleaseSmallBuffers()
-        {
-            if(rotateToCameraMat != null)
+            if (rotateToCameraMat != null)
                 rotateToCameraMat.Release();
+
+            if(pcMeshFilter != null)
+                if(pcMeshFilter.sharedMesh == null)
+                    DestroyImmediate(pcMeshFilter.sharedMesh);
+            if(pcObject != null)
+                DestroyImmediate(pcObject);
         }
 
         #region RenderInEditor
@@ -205,15 +271,7 @@ namespace BuildingVolumes.Streaming
         public void EndEditorLife()
         {
             SceneView.beforeSceneGui -= RenderInEditor;
-            ReleaseLargeBuffers();
-            ReleaseSmallBuffers();
-        }
-
-        [ExecuteInEditMode]
-
-        private void OnDestroy()
-        {
-            EndEditorLife();
+            Dispose();
         }
 #endif
 

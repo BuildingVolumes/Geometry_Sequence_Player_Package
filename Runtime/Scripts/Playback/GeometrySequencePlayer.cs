@@ -243,8 +243,7 @@ namespace BuildingVolumes.Streaming
         /// </summary>
         public void Show()
         {
-            if (stream.streamedMeshRenderer != null)
-                stream.streamedMeshRenderer.enabled = true;
+            stream.ShowSequence();
         }
 
         /// <summary>
@@ -252,10 +251,8 @@ namespace BuildingVolumes.Streaming
         /// </summary>
         public void Hide()
         {
-            if (stream.streamedMeshRenderer != null)
-                stream.streamedMeshRenderer.enabled = false;
+            stream.HideSequence();
         }
-
 
         /// <summary>
         /// Gets the absolute path to the folder containing the sequence

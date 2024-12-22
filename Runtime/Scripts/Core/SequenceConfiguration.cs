@@ -89,11 +89,10 @@ namespace BuildingVolumes.Streaming
             return TextureFormat.DDS;
 #elif UNITY_IOS || UNITY_ANDROID || UNITY_TVOS
             return TextureFormat.ASTC;
-#else
+#else 
             return TextureFormat.NotSupported;
 #endif
         }
-
     }
 }
 

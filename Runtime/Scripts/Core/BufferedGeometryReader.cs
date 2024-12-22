@@ -16,7 +16,6 @@ using System.Threading;
 
 namespace BuildingVolumes.Streaming
 {
-
     public class Frame
     {
         public NativeArray<byte> vertexBufferRaw;
@@ -65,13 +64,10 @@ namespace BuildingVolumes.Streaming
         bool buffering = true;
 
         /// <summary>
-        /// Create a new buffered reader. You must include a path to a valid folder
+        /// Create a new buffered reader. 
         /// </summary>
-        /// <param name="folder">A path to a folder containing .ply geometry files and optionally .dds texture files</param>
-        public BufferedGeometryReader(GameObject streamObject, Material source)
+        public BufferedGeometryReader()
         {
-            this.streamParent = streamObject;
-            this.materialSource = source;
         }
 
         ~BufferedGeometryReader()

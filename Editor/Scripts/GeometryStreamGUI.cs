@@ -37,7 +37,7 @@ namespace BuildingVolumes.Streaming
         bool showMaterialSlots;
 
         private void OnEnable()
-        {            
+        {
             meshMaterial = serializedObject.FindProperty("meshMaterial");
             materialSlots = serializedObject.FindProperty("materialSlots");
             customMaterialSlots = serializedObject.FindProperty("customMaterialSlots");
@@ -72,7 +72,7 @@ namespace BuildingVolumes.Streaming
 
             EditorGUI.BeginChangeCheck();
             EditorGUILayout.PropertyField(pointSize);
-            if(EditorGUI.EndChangeCheck())
+            if (EditorGUI.EndChangeCheck())
                 stream.SetPointSize(pointSize.floatValue);
 
             EditorGUILayout.BeginHorizontal();
@@ -81,19 +81,18 @@ namespace BuildingVolumes.Streaming
             GeometrySequenceStream.PointType newType = (GeometrySequenceStream.PointType)EditorGUILayout.EnumPopup(stream.pointType);
             if (EditorGUI.EndChangeCheck())
             {
-                MeshRenderer activeRend = stream.GetActiveRenderer();
-                if (activeRend != null)
-                    stream.SetPointcloudMaterial(newType, activeRend);
+                stream.SetPointcloudMaterial(newType);
             }
+
             EditorGUILayout.EndHorizontal();
 
             GUILayout.Space(10);
 
             GUILayout.Label("Mesh Settings", EditorStyles.boldLabel);
-            
+
             EditorGUILayout.PropertyField(meshMaterial);
             showMaterialSlots = EditorGUILayout.Foldout(showMaterialSlots, "Material Slots");
-            if (showMaterialSlots) 
+            if (showMaterialSlots)
             {
                 EditorGUILayout.PropertyField(materialSlots, new GUIContent("Apply to texture slots: "));
                 EditorGUILayout.PropertyField(customMaterialSlots, new GUIContent("Custom texture slots"));
@@ -132,7 +131,7 @@ namespace BuildingVolumes.Streaming
                 EditorGUI.BeginDisabledGroup(attachFrameDebugger.boolValue);
                 EditorGUILayout.PropertyField(frameDebugger, new GUIContent("Manually attach debugger"));
 
-            }           
+            }
 
             serializedObject.ApplyModifiedProperties();
         }

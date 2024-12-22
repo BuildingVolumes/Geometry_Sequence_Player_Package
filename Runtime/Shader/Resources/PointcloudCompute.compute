@@ -1,5 +1,4 @@
 #pragma kernel CreatePointcloud
-//#pragma kernel CleanupPointcloud
 
 //Contains the point cloud, from which we read the point position and colors
 ByteAddressBuffer _PointSourceBuffer;
