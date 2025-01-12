@@ -27,6 +27,7 @@ namespace BuildingVolumes.Streaming
 
         int sourcePointCount;
         bool isDataSet;
+        bool buffersInitialized;
 
         static readonly int vertexBufferID = Shader.PropertyToID("_VertexBuffer");
         static readonly int pointSourceID = Shader.PropertyToID("_PointSourceBuffer");
@@ -96,6 +97,8 @@ namespace BuildingVolumes.Streaming
             SetPointcloudMaterial(pointType);
             SetPointSize(pointSize);
 
+            buffersInitialized = true;
+
 #if UNITY_EDITOR
             if (!Application.isPlaying)
                 StartEditorLife();
@@ -109,7 +112,7 @@ namespace BuildingVolumes.Streaming
         /// <param name="sourceCount">The amount of points contained in the array</param>
         public void RenderFrame(Frame frame)
         {
-            if (!enabled)
+            if (!buffersInitialized)
                 return;
             frame.geoJobHandle.Complete();
             sourcePointCount = frame.geoJob.vertexCount;
@@ -131,7 +134,7 @@ namespace BuildingVolumes.Streaming
         /// </summary>
         void Render()
         {
-            if (!isDataSet || !enabled)
+            if (!isDataSet || !buffersInitialized)
                 return;
 
 #if UNITY_EDITOR
@@ -228,12 +231,6 @@ namespace BuildingVolumes.Streaming
                 pcMaterialSplats = Resources.Load("GS_SplatsExperimental") as Material;
         }
 
-        [ExecuteInEditMode]
-        private void OnDestroy()
-        {
-            Dispose();
-        }
-
         public void Dispose()
         {
             if (vertexBuffer != null)
@@ -250,6 +247,8 @@ namespace BuildingVolumes.Streaming
                     DestroyImmediate(pcMeshFilter.sharedMesh);
             if(pcObject != null)
                 DestroyImmediate(pcObject);
+
+            buffersInitialized = false;
         }
 
         #region RenderInEditor

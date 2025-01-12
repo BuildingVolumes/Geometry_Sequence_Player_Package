@@ -25,7 +25,7 @@ namespace BuildingVolumes.Streaming
         public bool attachFrameDebugger = false;
         public GSFrameDebugger frameDebugger = null;
         public Material meshMaterial;
-        public MaterialProperties materialSlots = MaterialProperties.Albedo;
+        public MaterialProperties materialSlots = MaterialProperties.MainTexture;
         public List<string> customMaterialSlots;
 
         public float pointSize = 0.02f;
@@ -59,7 +59,7 @@ namespace BuildingVolumes.Streaming
         public enum PathType { AbsolutePath, RelativeToDataPath, RelativeToPersistentDataPath, RelativeToStreamingAssets };
         public enum PointType { Quads, Circles, SplatsExperimental };
 
-        [Flags] public enum MaterialProperties { Albedo = 1, Emission = 2, Detail = 4 }
+        [Flags] public enum MaterialProperties { MainTexture = 1, Emission = 2, Detail = 4 }
 
         private void Awake()
         {
@@ -221,6 +221,9 @@ namespace BuildingVolumes.Streaming
             (msRenderer as Component).hideFlags = HideFlags.HideAndDontSave;
             msRenderer.Setup(this.transform, reader.sequenceConfig);
 
+            if(meshMaterial != null)
+                msRenderer.ChangeMaterial(meshMaterial);
+
 
             //If we have a single texture in the sequence, we read it immeiatly
             if (reader.sequenceConfig.textureMode == SequenceConfiguration.TextureMode.Single)
@@ -242,6 +245,7 @@ namespace BuildingVolumes.Streaming
 
         public void SetPointcloudMaterial(PointType type)
         {
+            pointType = type;
             pointcloudRenderer?.SetPointcloudMaterial(type);
             thumbnailPCRenderer?.SetPointcloudMaterial(type);
         }
@@ -312,17 +316,22 @@ namespace BuildingVolumes.Streaming
                 thumbnailReader.ScheduleGeometryReadJob(thumbnail, thumbnailReader.plyFilePaths[0]);
 
                 if (thumbnailReader.sequenceConfig.geometryType == SequenceConfiguration.GeometryType.point)
-                    thumbnailPCRenderer = SetupPointcloudRenderer(thumbnailReader.sequenceConfig);
-                else
-                    thumbnailMeshRenderer = SetupMeshSequenceRenderer(thumbnailReader);
-
-                if (thumbnailReader.sequenceConfig.textureMode != SequenceConfiguration.TextureMode.None)
                 {
-                    thumbnailReader.ScheduleTextureReadJob(thumbnail, thumbnailReader.GetDeviceDependendentTexturePath(0));
+                    thumbnailPCRenderer = SetupPointcloudRenderer(thumbnailReader.sequenceConfig);
+                    thumbnailPCRenderer?.RenderFrame(thumbnailReader.frameBuffer[0]);
                 }
 
-                thumbnailMeshRenderer?.RenderFrame(thumbnailReader.frameBuffer[0]);
-                thumbnailPCRenderer?.RenderFrame(thumbnailReader.frameBuffer[0]);
+                else
+                {
+                    thumbnailMeshRenderer = SetupMeshSequenceRenderer(thumbnailReader);
+
+                    if (thumbnailReader.sequenceConfig.textureMode != SequenceConfiguration.TextureMode.None)
+                    {
+                        thumbnailReader.ScheduleTextureReadJob(thumbnail, thumbnailReader.GetDeviceDependendentTexturePath(0));
+                    }
+
+                    thumbnailMeshRenderer?.RenderFrame(thumbnailReader.frameBuffer[0]);
+                }
             }
         }
 
@@ -334,6 +343,11 @@ namespace BuildingVolumes.Streaming
             thumbnailReader?.DisposeFrameBuffer(true);
             thumbnailMeshRenderer?.Dispose();
             thumbnailPCRenderer?.Dispose();
+
+            if (thumbnailMeshRenderer != null)
+                DestroyImmediate(thumbnailMeshRenderer as UnityEngine.Object);
+            if (thumbnailPCRenderer != null)
+                DestroyImmediate(thumbnailPCRenderer as UnityEngine.Object);
         }
 #endif
 #endregion

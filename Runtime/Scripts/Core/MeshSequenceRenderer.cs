@@ -141,7 +141,7 @@ namespace BuildingVolumes.Streaming
 
         public void ChangeMaterial(Material material)
         {
-            ChangeMaterial(material, GeometrySequenceStream.MaterialProperties.Albedo, null);
+            ChangeMaterial(material, GeometrySequenceStream.MaterialProperties.MainTexture, null);
         }
 
         public void ChangeMaterial(Material material, GeometrySequenceStream.MaterialProperties properties, List<string> customProperties)
@@ -153,10 +153,9 @@ namespace BuildingVolumes.Streaming
 
         void ApplyTextureToMaterial(Material mat, Texture tex, GeometrySequenceStream.MaterialProperties properties, List<string> customProperties)
         {
-            if ((GeometrySequenceStream.MaterialProperties.Albedo & properties) == GeometrySequenceStream.MaterialProperties.Albedo)
+            if ((GeometrySequenceStream.MaterialProperties.MainTexture & properties) == GeometrySequenceStream.MaterialProperties.MainTexture)
             {
-                if (mat.HasProperty("_MainTex"))
-                    mat.SetTexture("_MainTex", tex);
+                mat.mainTexture = tex;
             }
 
             if ((GeometrySequenceStream.MaterialProperties.Emission & properties) == GeometrySequenceStream.MaterialProperties.Emission)

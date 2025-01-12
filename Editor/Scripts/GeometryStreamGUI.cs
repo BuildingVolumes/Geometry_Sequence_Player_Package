@@ -12,7 +12,6 @@ namespace BuildingVolumes.Streaming
     {
         GeometrySequenceStream stream;
 
-        SerializedProperty pointcloudMaterial;
         SerializedProperty meshMaterial;
         SerializedProperty materialSlots;
         SerializedProperty customMaterialSlots;
@@ -51,7 +50,7 @@ namespace BuildingVolumes.Streaming
             droppedFrame = serializedObject.FindProperty("frameDropped");
             currentFrame = serializedObject.FindProperty("lastFrameIndex");
             targetFrameTiming = serializedObject.FindProperty("targetFrameTimeMs");
-            currentFrameTiming = serializedObject.FindProperty("sequenceDeltaTime");
+            currentFrameTiming = serializedObject.FindProperty("lastFrameTime");
             smoothedFPS = serializedObject.FindProperty("smoothedFPS");
 
             attachFrameDebugger = serializedObject.FindProperty("attachFrameDebugger");
@@ -82,6 +81,7 @@ namespace BuildingVolumes.Streaming
             if (EditorGUI.EndChangeCheck())
             {
                 stream.SetPointcloudMaterial(newType);
+
             }
 
             EditorGUILayout.EndHorizontal();
@@ -116,13 +116,11 @@ namespace BuildingVolumes.Streaming
             showInfo = EditorGUILayout.Foldout(showInfo, "Frame Info");
             if (showInfo)
             {
-                EditorGUI.BeginDisabledGroup(true);
-                EditorGUILayout.PropertyField(droppedFrame, new GUIContent("Dropped Frame"));
-                EditorGUILayout.PropertyField(currentFrame, new GUIContent("Currently played frame"));
-                EditorGUILayout.PropertyField(targetFrameTiming, new GUIContent("Target frame time in ms"));
-                EditorGUILayout.PropertyField(currentFrameTiming, new GUIContent("Current frame time in ms"));
-                EditorGUILayout.PropertyField(smoothedFPS, new GUIContent("Smoothed FPS"));
-                EditorGUI.EndDisabledGroup();
+                EditorGUILayout.LabelField("Currently played frame: " + currentFrame.intValue);
+                EditorGUILayout.LabelField("Target frame time in ms:    " + targetFrameTiming.floatValue.ToString("0"));
+                EditorGUILayout.LabelField("Current frame time in ms:   " + currentFrameTiming.floatValue.ToString("0"));
+                EditorGUILayout.LabelField("Smoothed FPS:   " + smoothedFPS.floatValue.ToString("0"));
+                EditorGUILayout.LabelField("Dropped frame:  " + droppedFrame.boolValue);
 
                 GUILayout.Space(10);
                 GUILayout.Label("Frame Debugger", EditorStyles.boldLabel);

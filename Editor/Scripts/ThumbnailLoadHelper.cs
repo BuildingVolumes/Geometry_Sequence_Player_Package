@@ -3,6 +3,7 @@
 using UnityEditor.SceneManagement;
 using UnityEditor;
 using UnityEngine;
+using UnityEditor.Callbacks;
 
 namespace BuildingVolumes.Streaming
 {
@@ -40,12 +41,20 @@ namespace BuildingVolumes.Streaming
             LoadThumbnail();
         }
 
+        //Load thumbnail after build has finished
+        [PostProcessBuildAttribute(1)]
+        public static void OnPostprocessBuild(BuildTarget target, string pathToBuiltProject)
+        {
+            EditorApplication.update += LoadThumbDelayed;
+            LoadThumbnailAfterEditorOpen = true;
+        }
+
         static void LoadThumbnail()
         {
             if (EditorApplication.isPlayingOrWillChangePlaymode)
                 return;
 
-            GeometrySequencePlayer[] players = GameObject.FindObjectsOfType<GeometrySequencePlayer>();
+            GeometrySequencePlayer[] players = GameObject.FindObjectsByType<GeometrySequencePlayer>(FindObjectsSortMode.None);
 
             foreach (GeometrySequencePlayer player in players)
             {
@@ -78,7 +87,7 @@ namespace BuildingVolumes.Streaming
 
         static void ClearThumbnail()
         {
-            GeometrySequencePlayer[] players = GameObject.FindObjectsOfType<GeometrySequencePlayer>();
+            GeometrySequencePlayer[] players = GameObject.FindObjectsByType<GeometrySequencePlayer>(FindObjectsSortMode.None);
 
             foreach (GeometrySequencePlayer player in players)
             {

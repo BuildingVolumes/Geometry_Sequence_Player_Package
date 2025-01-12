@@ -28,7 +28,7 @@ namespace BuildingVolumes.Streaming
         bool play = false;
         bool bufferingSequence = true;
 
-        public enum GSPlayerEvents { BufferingStarted, BufferingCompleted, PlaybackStarted, PlaybackFinished, Looped, FrameDropped }
+        public enum GSPlayerEvents { Stopped, Started, Paused, SequenceChanged, BufferingStarted, BufferingCompleted, PlaybackStarted, PlaybackFinished, Looped, FrameDropped }
 
         // Start is called before the first frame update
         void Start()
@@ -118,6 +118,8 @@ namespace BuildingVolumes.Streaming
         /// <returns>True when the sequence could sucessfully be reloaded, false if an error has occured</returns>
         public bool LoadCurrentSequence(bool autoplay = false, bool buffer = true)
         {
+            playbackEvents.Invoke(this, GSPlayerEvents.SequenceChanged);
+
             bool sucess = stream.ChangeSequence(GetAbsoluteSequencePath(), playbackFPS);
 
             if (sucess)
@@ -154,7 +156,8 @@ namespace BuildingVolumes.Streaming
         /// </summary>
         public void Play()
         {
-            play = true;                
+            play = true;
+            playbackEvents.Invoke(this, GSPlayerEvents.Started);
         }
 
         /// <summary>
@@ -163,6 +166,7 @@ namespace BuildingVolumes.Streaming
         public void Pause()
         {
             play = false;
+            playbackEvents.Invoke(this, GSPlayerEvents.Paused);
         }
 
         /// <summary>
@@ -172,6 +176,7 @@ namespace BuildingVolumes.Streaming
         {
             Pause();
             GoToFrame(0);
+            playbackEvents.Invoke(this, GSPlayerEvents.Stopped);
         }
 
         /// <summary>
