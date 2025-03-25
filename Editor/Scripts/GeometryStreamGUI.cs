@@ -16,7 +16,7 @@ namespace BuildingVolumes.Streaming
         SerializedProperty materialSlots;
         SerializedProperty customMaterialSlots;
         SerializedProperty pointSize;
-        SerializedProperty pointType;
+        SerializedProperty pointEmission;
 
         SerializedProperty bufferSize;
         SerializedProperty useAllThreads;
@@ -41,7 +41,7 @@ namespace BuildingVolumes.Streaming
             materialSlots = serializedObject.FindProperty("materialSlots");
             customMaterialSlots = serializedObject.FindProperty("customMaterialSlots");
             pointSize = serializedObject.FindProperty("pointSize");
-            pointType = serializedObject.FindProperty("pointType");
+            pointEmission = serializedObject.FindProperty("pointEmission");
 
             bufferSize = serializedObject.FindProperty("bufferSize");
             useAllThreads = serializedObject.FindProperty("useAllThreads");
@@ -81,15 +81,20 @@ namespace BuildingVolumes.Streaming
             if (EditorGUI.EndChangeCheck())
             {
                 stream.SetPointcloudMaterial(newType);
-
             }
-
             EditorGUILayout.EndHorizontal();
+
+            EditorGUI.BeginChangeCheck();
+            EditorGUILayout.PropertyField(pointEmission);
+            if(EditorGUI.EndChangeCheck())
+                stream.SetPointEmission(pointEmission.floatValue);
 
             GUILayout.Space(10);
 
             GUILayout.Label("Mesh Settings", EditorStyles.boldLabel);
 
+            bool updateMaterial = false;
+            EditorGUI.BeginChangeCheck();
             EditorGUILayout.PropertyField(meshMaterial);
             showMaterialSlots = EditorGUILayout.Foldout(showMaterialSlots, "Material Slots");
             if (showMaterialSlots)
@@ -97,6 +102,7 @@ namespace BuildingVolumes.Streaming
                 EditorGUILayout.PropertyField(materialSlots, new GUIContent("Apply to texture slots: "));
                 EditorGUILayout.PropertyField(customMaterialSlots, new GUIContent("Custom texture slots"));
             }
+            updateMaterial = EditorGUI.EndChangeCheck();
 
 
             showBufferOptions = EditorGUILayout.Foldout(showBufferOptions, "Buffer Options");
@@ -132,6 +138,9 @@ namespace BuildingVolumes.Streaming
             }
 
             serializedObject.ApplyModifiedProperties();
+
+            if(updateMaterial)
+                stream.SetMeshMaterial(stream.meshMaterial);
         }
     }
 }

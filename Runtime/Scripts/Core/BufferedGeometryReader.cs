@@ -116,7 +116,7 @@ namespace BuildingVolumes.Streaming
 
             if (sequenceConfig.textureMode != SequenceConfiguration.TextureMode.None)
             {
-                if (sequenceConfig.DDS)
+                if (sequenceConfig.DDS && GetDeviceDependentTextureFormat() == SequenceConfiguration.TextureFormat.DDS)
                 {
                     try
                     {
@@ -131,7 +131,7 @@ namespace BuildingVolumes.Streaming
                         return false;
                     }
 
-                    if (texturesFilePathDDS.Length == 0 && GetDeviceDependentTextureFormat() == SequenceConfiguration.TextureFormat.DDS)
+                    if (texturesFilePathDDS.Length == 0)
                     {
                         Debug.LogError("No .dds texture files (for desktop devices) could be found! Make sure that you converted and uploaded .dds textures for this device!");
                         return false;
@@ -147,7 +147,7 @@ namespace BuildingVolumes.Streaming
                     }
                 }
 
-                if (sequenceConfig.ASTC)
+                if (sequenceConfig.ASTC && GetDeviceDependentTextureFormat() == SequenceConfiguration.TextureFormat.ASTC)
                 {
                     try
                     {
@@ -162,7 +162,7 @@ namespace BuildingVolumes.Streaming
                         return false;
                     }
 
-                    if (texturesFilePathASTC.Length == 0 && GetDeviceDependentTextureFormat() == SequenceConfiguration.TextureFormat.ASTC)
+                    if (texturesFilePathASTC.Length == 0)
                     {
                         Debug.LogError("No .astc texture files (for mobile devices) could be found! Make sure that you converted and uploaded .astc texture files to this device!");
                         return false;
@@ -176,26 +176,30 @@ namespace BuildingVolumes.Streaming
                             return false;
                         }
                     }
-                }
-
 
 #if UNITY_EDITOR
-                if (texturesFilePathASTC.Length > 0 && texturesFilePathDDS.Length == 0)
-                {
-                    Debug.LogError("Only .astc texture files for mobile devices have been found in your sequence." +
-                        "Astc Textures cannot not be displayed in the editor. To display textures in the editor" +
-                        "please additionally generate .dds textures with the converter utility!");
-                }
+                    if (texturesFilePathASTC.Length > 0 && texturesFilePathDDS.Length == 0)
+                    {
+                        Debug.LogError("Only .astc texture files for mobile devices have been found in your sequence." +
+                            "Astc Textures cannot not be displayed in the editor. To display textures in the editor" +
+                            "please additionally generate .dds textures with the converter utility!");
+                    }
 #endif
+                }
+
+
+
             }
 
             bufferSize = frameBufferSize;
             totalFrames = plyFilePaths.Length;
 
-            if (bufferSize < 2)
-                bufferSize = 2;
-            if (bufferSize >= totalFrames)
+
+            if (bufferSize > totalFrames)
                 bufferSize = totalFrames - 1;
+
+            if (bufferSize < 1)
+                bufferSize = 1;
 
             frameBuffer = new Frame[bufferSize];
 
@@ -233,7 +237,7 @@ namespace BuildingVolumes.Streaming
             List<int> framesToBuffer = new List<int>();
 
             //Look for the frames we could potentially buffer
-            for (int i = 0; i < bufferSize; i++)
+            for (int i = 0; i < totalFrames; i++)
             {
                 //In case our buffer is larger than the whole sequence
                 if (framesToBuffer.Count >= totalFrames)
@@ -263,12 +267,7 @@ namespace BuildingVolumes.Streaming
                     if (newPlaybackIndex < totalFrames)
                     {
                         //Debug.Log("Buffering Frame: " + newPlaybackIndex + " at buffer " + i);
-
-                        SetupFrameForReading(frameBuffer[i], sequenceConfig, newPlaybackIndex);
-                        ScheduleGeometryReadJob(frameBuffer[i], plyFilePaths[newPlaybackIndex]);
-                        if (sequenceConfig.textureMode == SequenceConfiguration.TextureMode.PerFrame)
-                            ScheduleTextureReadJob(frameBuffer[i], GetDeviceDependendentTexturePath(newPlaybackIndex));
-
+                        ScheduleFrame(frameBuffer[i], newPlaybackIndex);
                         framesToBuffer.Remove(newPlaybackIndex);
                     }
                 }
@@ -278,6 +277,16 @@ namespace BuildingVolumes.Streaming
             JobHandle.ScheduleBatchedJobs();
 
             CheckFramesForCompletion();
+        }
+
+
+        public void ScheduleFrame(Frame frame, int newPlaybackIndex)
+        {
+            SetupFrameForReading(frame, sequenceConfig, newPlaybackIndex);
+            ScheduleGeometryReadJob(frame, plyFilePaths[newPlaybackIndex]);
+            if (sequenceConfig.textureMode == SequenceConfiguration.TextureMode.PerFrame)
+                ScheduleTextureReadJob(frame, GetDeviceDependendentTexturePath(newPlaybackIndex));
+
         }
 
         public void CheckFramesForCompletion()
@@ -405,6 +414,7 @@ namespace BuildingVolumes.Streaming
 
             return -1;
         }
+
 
         /// <summary>
         /// Get the total amount of frames that are fully stored in buffer

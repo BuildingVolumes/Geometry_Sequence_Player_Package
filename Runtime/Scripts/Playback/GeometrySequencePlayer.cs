@@ -118,6 +118,9 @@ namespace BuildingVolumes.Streaming
         /// <returns>True when the sequence could sucessfully be reloaded, false if an error has occured</returns>
         public bool LoadCurrentSequence(bool autoplay = false, bool buffer = true)
         {
+            if (GetRelativeSequencePath().Length == 0)
+                return false;
+
             playbackEvents.Invoke(this, GSPlayerEvents.SequenceChanged);
 
             bool sucess = stream.ChangeSequence(GetAbsoluteSequencePath(), playbackFPS);
@@ -294,15 +297,6 @@ namespace BuildingVolumes.Streaming
         }
 
         /// <summary>
-        /// Is a sequence currently loaded and ready to play?
-        /// </summary>
-        /// <returns></returns>
-        public bool IsInitialized()
-        {
-            return stream.readerInitialized;
-        }
-
-        /// <summary>
         /// Get the location to to which the relativePath is relative to.
         /// </summary>
         /// <returns>The relative location.</returns>
@@ -310,6 +304,17 @@ namespace BuildingVolumes.Streaming
         {
             return pathRelation;
         }
+
+        /// <summary>
+        /// Is a sequence currently loaded and ready to play?
+        /// </summary>
+        /// <returns>True if a sequence is initialized and ready to play, false if not</returns>
+        public bool IsInitialized()
+        {
+            return stream.readerInitialized;
+        }
+
+   
 
         /// <summary>
         /// Is the current clip playing?
@@ -419,7 +424,7 @@ namespace BuildingVolumes.Streaming
         /// If it is, playback starts immediatly once you call Play()
         /// </summary>
         /// <returns></returns>
-        public bool GetCacheFilled()
+        public bool IsCacheFilled()
         {
             if (stream != null)
             {
@@ -450,7 +455,7 @@ namespace BuildingVolumes.Streaming
         {
             if (bufferingSequence)
             {
-                while (!GetCacheFilled())
+                while (!IsCacheFilled())
                     yield return null;
 
                 bufferingSequence = false;
@@ -475,6 +480,9 @@ namespace BuildingVolumes.Streaming
         {
             if (stream == null)
                 stream = GetComponent<GeometrySequenceStream>();
+
+            if (GetRelativeSequencePath().Length == 0)
+                return;
 
             stream.LoadEditorThumbnail(pathToSequence);
         }

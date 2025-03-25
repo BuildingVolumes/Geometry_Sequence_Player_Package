@@ -2,7 +2,7 @@ Shader "Unlit/GS_UnlitCircle"
 {
     Properties
     {
-
+        _Emission("Emission Strength", Range(0.0,10.0)) = 1.0
     }
     SubShader
     {
@@ -41,6 +41,8 @@ Shader "Unlit/GS_UnlitCircle"
                 UNITY_VERTEX_OUTPUT_STEREO
             };
 
+            float _Emission;
+
             v2f vert (appdata v)
             {
                 v2f o;
@@ -67,6 +69,7 @@ Shader "Unlit/GS_UnlitCircle"
             fixed4 frag (v2f i) : SV_Target
             {
                 fixed4 col = i.color;
+                col = col * _Emission;
                 float a = circle(i.texcoord);
                 clip(a - 0.5);
                 // apply fog

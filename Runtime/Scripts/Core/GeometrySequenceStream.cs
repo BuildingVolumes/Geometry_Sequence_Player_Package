@@ -1,7 +1,6 @@
 using UnityEngine;
 using System.IO;
 using Unity.Jobs.LowLevel.Unsafe;
-using UnityEngine.Rendering;
 using System;
 using System.Collections.Generic;
 using UnityEditor;
@@ -25,11 +24,12 @@ namespace BuildingVolumes.Streaming
         public bool attachFrameDebugger = false;
         public GSFrameDebugger frameDebugger = null;
         public Material meshMaterial;
-        public MaterialProperties materialSlots = MaterialProperties.MainTexture;
+        public MaterialProperties materialSlots = MaterialProperties.Albedo;
         public List<string> customMaterialSlots;
 
         public float pointSize = 0.02f;
         public PointType pointType;
+        public float pointEmission = 1f;
 
         public IPointCloudRenderer pointcloudRenderer;
         public IMeshSequenceRenderer meshSequenceRenderer;
@@ -59,7 +59,7 @@ namespace BuildingVolumes.Streaming
         public enum PathType { AbsolutePath, RelativeToDataPath, RelativeToPersistentDataPath, RelativeToStreamingAssets };
         public enum PointType { Quads, Circles, SplatsExperimental };
 
-        [Flags] public enum MaterialProperties { MainTexture = 1, Emission = 2, Detail = 4 }
+        [Flags] public enum MaterialProperties { Albedo = 1, Emission = 2, Detail = 4 }
 
         private void Awake()
         {
@@ -91,7 +91,7 @@ namespace BuildingVolumes.Streaming
                 return readerInitialized;
 
             if (bufferedReader.sequenceConfig.geometryType == SequenceConfiguration.GeometryType.point)
-                pointcloudRenderer = SetupPointcloudRenderer(bufferedReader.sequenceConfig);
+                pointcloudRenderer = SetupPointcloudRenderer(bufferedReader);
             else
                 meshSequenceRenderer = SetupMeshSequenceRenderer(bufferedReader);
 
@@ -107,6 +107,16 @@ namespace BuildingVolumes.Streaming
         {
             if (!readerInitialized)
                 return;
+
+            if (bufferedReader.totalFrames == 1)
+            {
+                bufferedReader.SetupFrameForReading(bufferedReader.frameBuffer[0], bufferedReader.sequenceConfig, 0);
+                bufferedReader.ScheduleGeometryReadJob(bufferedReader.frameBuffer[0], bufferedReader.GetDeviceDependendentTexturePath(0));
+                bufferedReader.frameBuffer[0].geoJobHandle.Complete();
+                ShowFrame(bufferedReader.frameBuffer[0]);
+                return;
+            }
+
 
             sequenceDeltaTime += Time.deltaTime * 1000;
             elapsedMsSinceSequenceStart += Time.deltaTime * 1000;
@@ -194,21 +204,22 @@ namespace BuildingVolumes.Streaming
         public void ShowFrame(Frame frame)
         {
             if (bufferedReader.sequenceConfig.geometryType == SequenceConfiguration.GeometryType.point)
-                pointcloudRenderer?.RenderFrame(frame);
+                pointcloudRenderer?.SetFrame(frame);
             else
                 meshSequenceRenderer?.RenderFrame(frame);
 
             frame.finishedBufferingTime = 0;
         }
 
-        public IPointCloudRenderer SetupPointcloudRenderer(SequenceConfiguration config)
+        public IPointCloudRenderer SetupPointcloudRenderer(BufferedGeometryReader reader)
         {
             IPointCloudRenderer pcRenderer;
 
             pcRenderer = gameObject.AddComponent<PointcloudRenderer>();
 
             (pcRenderer as Component).hideFlags = HideFlags.HideAndDontSave;
-            pcRenderer.Setup(config, this.transform, pointSize, pointType);
+            pcRenderer.Setup(reader.sequenceConfig, this.transform, pointSize, pointEmission, pointType);
+
             return pcRenderer;
         }
 
@@ -223,7 +234,6 @@ namespace BuildingVolumes.Streaming
 
             if(meshMaterial != null)
                 msRenderer.ChangeMaterial(meshMaterial);
-
 
             //If we have a single texture in the sequence, we read it immeiatly
             if (reader.sequenceConfig.textureMode == SequenceConfiguration.TextureMode.Single)
@@ -243,11 +253,23 @@ namespace BuildingVolumes.Streaming
             thumbnailPCRenderer?.SetPointSize(pointSize);
         }
 
+        public void SetPointEmission(float pointEmission)
+        {
+            pointcloudRenderer?.SetPointEmission(pointEmission);
+            thumbnailPCRenderer?.SetPointEmission(pointEmission);
+        }
+
         public void SetPointcloudMaterial(PointType type)
         {
             pointType = type;
             pointcloudRenderer?.SetPointcloudMaterial(type);
             thumbnailPCRenderer?.SetPointcloudMaterial(type);
+        }
+
+        public void SetMeshMaterial(Material mat)
+        {
+            meshSequenceRenderer?.ChangeMaterial(mat);
+            thumbnailMeshRenderer?.ChangeMaterial(mat);
         }
 
         public void ShowSequence()
@@ -298,10 +320,6 @@ namespace BuildingVolumes.Streaming
 
             ClearEditorThumbnail();
 
-            if (GetComponent<GeometrySequencePlayer>() != null)
-                if (GetComponent<GeometrySequencePlayer>().GetRelativeSequencePath().Length == 0)
-                    return;
-
             if (Directory.Exists(pathToSequence))
             {
                 thumbnailReader = new BufferedGeometryReader();
@@ -317,8 +335,8 @@ namespace BuildingVolumes.Streaming
 
                 if (thumbnailReader.sequenceConfig.geometryType == SequenceConfiguration.GeometryType.point)
                 {
-                    thumbnailPCRenderer = SetupPointcloudRenderer(thumbnailReader.sequenceConfig);
-                    thumbnailPCRenderer?.RenderFrame(thumbnailReader.frameBuffer[0]);
+                    thumbnailPCRenderer = SetupPointcloudRenderer(thumbnailReader);
+                    thumbnailPCRenderer?.SetFrame(thumbnailReader.frameBuffer[0]);
                 }
 
                 else

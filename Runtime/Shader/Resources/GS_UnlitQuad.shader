@@ -2,7 +2,7 @@ Shader "Unlit/GS_UnlitQuad"
 {
     Properties
     {
-
+        _Emission("Emission Strength", Range(0.0,10.0)) = 1.0
     }
     SubShader
     {
@@ -41,6 +41,8 @@ Shader "Unlit/GS_UnlitQuad"
                 UNITY_VERTEX_OUTPUT_STEREO
             };
 
+            float _Emission;
+
             v2f vert (appdata v)
             {
                 v2f o;
@@ -58,7 +60,9 @@ Shader "Unlit/GS_UnlitQuad"
 
             fixed4 frag (v2f i) : SV_Target
             {
-                fixed4 col = i.color;                
+                fixed4 col = i.color;
+                col = col * _Emission;
+
                 // apply fog
                 UNITY_APPLY_FOG(i.fogCoord, col);
                 return col;

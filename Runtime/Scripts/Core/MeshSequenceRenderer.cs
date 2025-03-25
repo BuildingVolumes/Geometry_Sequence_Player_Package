@@ -141,11 +141,14 @@ namespace BuildingVolumes.Streaming
 
         public void ChangeMaterial(Material material)
         {
-            ChangeMaterial(material, GeometrySequenceStream.MaterialProperties.MainTexture, null);
+            ChangeMaterial(material, GeometrySequenceStream.MaterialProperties.Albedo, null);
         }
 
         public void ChangeMaterial(Material material, GeometrySequenceStream.MaterialProperties properties, List<string> customProperties)
         {
+            if (material == null)
+                material = defaultMeshMaterial;
+
             Material newMat = new Material(material);
             ApplyTextureToMaterial(newMat, streamedMeshTexture, properties, customProperties);
             streamedMeshRenderer.sharedMaterial = newMat;
@@ -153,7 +156,10 @@ namespace BuildingVolumes.Streaming
 
         void ApplyTextureToMaterial(Material mat, Texture tex, GeometrySequenceStream.MaterialProperties properties, List<string> customProperties)
         {
-            if ((GeometrySequenceStream.MaterialProperties.MainTexture & properties) == GeometrySequenceStream.MaterialProperties.MainTexture)
+            if(mat.mainTextureScale.y > 0)
+                mat.mainTextureScale = new Vector2(mat.mainTextureScale.x, mat.mainTextureScale.y * -1);
+
+            if ((GeometrySequenceStream.MaterialProperties.Albedo & properties) == GeometrySequenceStream.MaterialProperties.Albedo)
             {
                 mat.mainTexture = tex;
             }
@@ -178,10 +184,6 @@ namespace BuildingVolumes.Streaming
                         mat.SetTexture(prop, tex);
                 }
             }
-
-
-            Vector2 scale = mat.GetTextureScale("_MainTex");
-            mat.SetTextureScale("_MainTex", new Vector2(scale.x, scale.y * -1));
         }
 
         public void Show()

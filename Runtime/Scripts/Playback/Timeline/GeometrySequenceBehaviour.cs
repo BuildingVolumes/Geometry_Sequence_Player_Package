@@ -21,6 +21,9 @@ namespace BuildingVolumes.Streaming
         {
             GeometrySequenceStream stream = playerData as GeometrySequenceStream;
 
+            if (stream == null)
+                return;
+
             if (!Application.isPlaying)
                 return;
 

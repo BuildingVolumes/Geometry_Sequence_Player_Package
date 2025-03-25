@@ -1,7 +1,16 @@
-#pragma kernel CreatePointcloud
+#pragma kernel CreatePointcloudFromBuffer1
+#pragma kernel CreatePointcloudFromBuffer2
+#pragma kernel CreatePointcloudFromBuffer3
 
 //Contains the point cloud, from which we read the point position and colors
-ByteAddressBuffer _PointSourceBuffer;
+//As Unity needs up to three frames to load data into a new buffer, we 
+//use a triple buffered swapchain
+ByteAddressBuffer _PointSourceBuffer1;
+ByteAddressBuffer _PointSourceBuffer2;
+ByteAddressBuffer _PointSourceBuffer3;
+int _PointCount1;
+int _PointCount2;
+int _PointCount3;
 
 //Contains the vertice positions and colors of the quads we create
 RWByteAddressBuffer _VertexBuffer;
@@ -12,9 +21,10 @@ RWByteAddressBuffer _IndexBuffer;
 //The Rotation Matrix which we use to rotate orient the quads towards the camera
 StructuredBuffer<float4x4> _RotateToCamera;
 
+//Size of the points in Unity dimensions
 float _PointScale;
-int _PointCount;
 
+//Just a simple quad mesh
 struct _PointQuad
 {
     float3 vertex1;
@@ -31,7 +41,8 @@ struct _PointQuad
     float2 uv4;
 };
 
-float3 GetPositionFromPointSourceBuffer(int id)
+// Gets the vertex position (xyz float) from the point source buffer
+float3 GetPositionFromPointSourceBuffer(int id, ByteAddressBuffer buffer)
 {
     //We access the raw vertex buffer of the mesh vertices. As this buffer is raw, we don't have a handy struct to navigate it
 	//and need to find the memory addresses ourselves. Luckily, we create the mesh ourselves, so we know that we have:
@@ -39,16 +50,17 @@ float3 GetPositionFromPointSourceBuffer(int id)
     uint pointIndex = id.x * 4 * 4;
 
 	//All values in the Raw vertex buffer can only be retrieved as ints
-    uint3 positionRaw = _PointSourceBuffer.Load3(pointIndex);
+    uint3 positionRaw = buffer.Load3(pointIndex);
 
 	//Reinterpret the int position into floats
     return asfloat(positionRaw);
 }
 
-uint GetColorFromPointSourceBuffer(int id)
+// Get the 32bit uint from the buffer that contains the colors in RGBA format
+uint GetColorFromPointSourceBuffer(int id, ByteAddressBuffer buffer)
 {
     uint pointIndex = id.x * 4 * 4 + 12;
-    return _PointSourceBuffer.Load(pointIndex);
+    return buffer.Load(pointIndex);
 }
 
 //Rotate quad towards camera
@@ -71,7 +83,7 @@ _PointQuad TranslateQuad(_PointQuad quad, float3 position)
     return quad;
 }
 
-//Create a quad on each point position, so that the points become renderable
+//Create a quad mesh on each point position
 _PointQuad CreateQuad(float3 pos, int id, float scale)
 {    
     //Create a quad
@@ -97,7 +109,15 @@ _PointQuad CreateQuad(float3 pos, int id, float scale)
     return outQuad;
 }
 
+// A quad that is invisible. If we didn't use the maximum amount of points in the buffer
+// this is used to erase any quads from the previous call
+_PointQuad CreateEmptyQuad()
+{
+    _PointQuad outQuad = { float3(0, 0, 0), float3(0, 0, 0), float3(0, 0, 0), float3(0, 0, 0), uint3(0, 0, 0), uint3(0, 0, 0), float2(0, 0), float2(0, 0), float2(0, 0), float2(0, 0) };
+    return outQuad;
+}
 
+// Write a quad to the output buffer that contains the mesh
 void StoreQuad(_PointQuad quad, uint color, int id)
 {
     //The vertex buffer position for a quad is: Thread ID * 4 (vertices per quad) * 3 (floats per vertice posiion) * 2 (floats per UV) + 1 (uint for color))
@@ -146,19 +166,48 @@ void StoreQuad(_PointQuad quad, uint color, int id)
     _IndexBuffer.Store3(iPos2, quad.triangle2);
 }
 
-[numthreads(128, 1, 1)]
-void CreatePointcloud(uint3 id : SV_DispatchThreadID)
-{
-    if (id.x >= (uint)_PointCount)        
-        return;
+void CreatePointcloud(uint3 id, ByteAddressBuffer buffer, int pointCount)
+{    
+    _PointQuad quad;
+    uint color = uint(0);
     
-    float3 position = GetPositionFromPointSourceBuffer(id.x);
-    uint color = GetColorFromPointSourceBuffer(id.x);
-    
-    _PointQuad quad = CreateQuad(position, id.x, _PointScale);
+    if (id.x < (uint) pointCount)
+    {
+        float3 position = GetPositionFromPointSourceBuffer(id.x, buffer);
+        color = GetColorFromPointSourceBuffer(id.x, buffer);
+        quad = CreateQuad(position, id.x, _PointScale);
+    }
+    else
+    {
+        quad = CreateEmptyQuad();
+    }  
     
     StoreQuad(quad, color, id.x);
 }
+
+
+// For the triple buffered swapchain to work, the script that request the compute shader
+// calls these functions in a loop (1-2-3-1-2-3-1...) 
+
+[numthreads(128, 1, 1)]
+void CreatePointcloudFromBuffer1(uint3 id : SV_DispatchThreadID)
+{
+    CreatePointcloud(id, _PointSourceBuffer1, _PointCount1);
+}
+
+[numthreads(128, 1, 1)]
+void CreatePointcloudFromBuffer2(uint3 id : SV_DispatchThreadID)
+{
+    CreatePointcloud(id, _PointSourceBuffer2, _PointCount2);
+}
+
+[numthreads(128, 1, 1)]
+void CreatePointcloudFromBuffer3(uint3 id : SV_DispatchThreadID)
+{
+    CreatePointcloud(id, _PointSourceBuffer3, _PointCount3);
+}
+
+
 
     
     

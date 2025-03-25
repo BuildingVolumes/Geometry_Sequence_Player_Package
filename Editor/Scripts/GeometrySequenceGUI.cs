@@ -10,7 +10,6 @@ namespace BuildingVolumes.Streaming
     public class GeometrySequenceGUI : Editor
     {
         SerializedProperty relativePath;
-        SerializedProperty pathToSequence;
         SerializedProperty pathRelation;
         SerializedProperty targetFPS;
         SerializedProperty playAtStart;
@@ -24,7 +23,6 @@ namespace BuildingVolumes.Streaming
         private void OnEnable()
         {
             relativePath = serializedObject.FindProperty("relativePath");
-            pathToSequence = serializedObject.FindProperty("pathToSequence");
             pathRelation = serializedObject.FindProperty("pathRelation");
             targetFPS = serializedObject.FindProperty("playbackFPS");
             playAtStart = serializedObject.FindProperty("playAtStart");
@@ -43,11 +41,21 @@ namespace BuildingVolumes.Streaming
         {
             serializedObject.Update();
 
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.FlexibleSpace();
+            if (GUILayout.Button("Documentation", GUILayout.MaxWidth(100)))
+            {
+                Application.OpenURL("https://buildingvolumes.github.io/Unity_Geometry_Sequence_Streaming/docs/quickstart/quick-start/");
+            }
+            EditorGUILayout.EndHorizontal();
+
             GeometrySequencePlayer player = (GeometrySequencePlayer)target;
             Texture2D logo = (Texture2D)Resources.Load("gss_logo");
             GUIStyle style = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleCenter };
             EditorGUILayout.LabelField(new GUIContent(logo), style, GUILayout.MinHeight(50), GUILayout.MinWidth(256), GUILayout.ExpandWidth(true));
             GUILayout.Space(20);
+
+            
 
             GUILayout.Label("Set Sequence", EditorStyles.boldLabel);
 
