@@ -87,7 +87,7 @@ namespace BuildingVolumes.Streaming
         {
 #if UNITY_EDITOR || UNITY_STANDALONE_WIN || UNITY_STANDALONE_OSX || UNITY_STANDALONE_LINUX
             return TextureFormat.DDS;
-#elif UNITY_IOS || UNITY_ANDROID || UNITY_TVOS
+#elif UNITY_IOS || UNITY_ANDROID || UNITY_TVOS || UNITY_VISIONOS
             return TextureFormat.ASTC;
 #else 
             return TextureFormat.NotSupported;

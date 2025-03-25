@@ -5,6 +5,9 @@ using System;
 using System.Collections.Generic;
 using UnityEditor;
 
+#if UNITY_VISIONOS
+using Unity.PolySpatial;
+#endif
 #if UNITY_EDITOR
 using UnityEditor.SceneManagement;
 #endif
@@ -215,7 +218,15 @@ namespace BuildingVolumes.Streaming
         {
             IPointCloudRenderer pcRenderer;
 
+#if UNITY_VISIONOS
+            UnityEngine.Object volumeCam = UnityEngine.Object.FindFirstObjectByType<Unity.PolySpatial.VolumeCamera>();
+            if (volumeCam != null)
+                pcRenderer = gameObject.AddComponent<PointcloudRendererRT>();
+            else
+                pcRenderer = gameObject.AddComponent<PointcloudRenderer>();
+#else
             pcRenderer = gameObject.AddComponent<PointcloudRenderer>();
+#endif
 
             (pcRenderer as Component).hideFlags = HideFlags.HideAndDontSave;
             pcRenderer.Setup(reader.sequenceConfig, this.transform, pointSize, pointEmission, pointType);
@@ -227,7 +238,15 @@ namespace BuildingVolumes.Streaming
         {
             IMeshSequenceRenderer msRenderer;
 
+#if UNITY_VISIONOS
+            UnityEngine.Object volumeCam = UnityEngine.Object.FindFirstObjectByType<Unity.PolySpatial.VolumeCamera>();
+            if (volumeCam != null)
+                msRenderer = gameObject.AddComponent<MeshSequenceRendererSC>();
+            else
+                msRenderer = gameObject.AddComponent<MeshSequenceRenderer>();
+#else
             msRenderer = gameObject.AddComponent<MeshSequenceRenderer>();
+#endif
 
             (msRenderer as Component).hideFlags = HideFlags.HideAndDontSave;
             msRenderer.Setup(this.transform, reader.sequenceConfig);

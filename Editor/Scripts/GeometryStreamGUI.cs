@@ -122,11 +122,13 @@ namespace BuildingVolumes.Streaming
             showInfo = EditorGUILayout.Foldout(showInfo, "Frame Info");
             if (showInfo)
             {
+		EditorGUI.BeginDisabledGroup(true);
                 EditorGUILayout.LabelField("Currently played frame: " + currentFrame.intValue);
                 EditorGUILayout.LabelField("Target frame time in ms:    " + targetFrameTiming.floatValue.ToString("0"));
                 EditorGUILayout.LabelField("Current frame time in ms:   " + currentFrameTiming.floatValue.ToString("0"));
                 EditorGUILayout.LabelField("Smoothed FPS:   " + smoothedFPS.floatValue.ToString("0"));
                 EditorGUILayout.LabelField("Dropped frame:  " + droppedFrame.boolValue);
+                EditorGUI.EndDisabledGroup();
 
                 GUILayout.Space(10);
                 GUILayout.Label("Frame Debugger", EditorStyles.boldLabel);
