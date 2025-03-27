@@ -1,12 +1,12 @@
 {
-  "name": "com.buildingvolumes.geometry_sequence_streaming",
+  "name": "com.buildingvolumes.geometry_sequence_player",
   "version": "1.1.0",
-  "displayName": "Geometry Sequence Streaming",
-  "description": "This package allows you to stream large pointcloud and mesh sequences (e.g. volumetric video) from disk.",
-  "unity": "2020.1",
-  "documentationUrl": "https://buildingvolumes.github.io/Unity_Geometry_Sequence_Streaming/",
-  "changelogUrl": "https://buildingvolumes.github.io/Unity_Geometry_Sequence_Streaming/docs/about/changelog/",
-  "licensesUrl": "https://buildingvolumes.github.io/Unity_Geometry_Sequence_Streaming/docs/about/license-credits/",
+  "displayName": "Geometry Sequence Player",
+  "description": "This package allows you to efficiently play large pointcloud and mesh sequences (e.g. volumetric video).",
+  "unity": "2022.1",
+  "documentationUrl": "https://buildingvolumes.github.io/Unity_Geometry_Sequence_Player/",
+  "changelogUrl": "https://buildingvolumes.github.io/Unity_Geometry_Sequence_Player/docs/about/changelog/",
+  "licensesUrl": "https://buildingvolumes.github.io/Unity_Geometry_Sequence_Player/docs/about/license-credits/",
   "dependencies": {
     "com.unity.jobs": "0.70.0-preview.7",
     "com.unity.timeline": "1.6.4"
@@ -14,9 +14,11 @@
   "keywords": [
     "Geometry",
     "Sequence",
+    "player",
     "streaming",
     "mesh",
     "pointcloud",
+    "point",
     "volumetric",
     "video",
     "LiveScan3D",
@@ -25,13 +27,13 @@
   ],
   "author": {
     "name": "Christopher Remde",
-    "email": "chris.rem@proton.me",
+    "email": "hey@chrisrem.de",
     "url": "https://chrisrem.de/"
   },
   "samples": [
     {
-      "displayName": "Streaming Samples",
-      "description": "These samples show you how to playback a geometry sequence using the editor, timeline and API. Also contains a short sample sequence",
+      "displayName": "Sequence Playback Samples",
+      "description": "These samples show you how to playback a geometry sequence using the editor, timeline and API. Also contains short sample sequences for both meshes and pointclouds",
       "path": "Samples~/StreamingSamples"
     }
   ],
