@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using UnityEngine.Rendering;
 using UnityEngine;
 
-namespace BuildingVolumes.Streaming
+namespace BuildingVolumes.Player
 {
     public class MeshSequenceRenderer : MonoBehaviour, IMeshSequenceRenderer
     {
@@ -156,7 +156,7 @@ namespace BuildingVolumes.Streaming
 
         void ApplyTextureToMaterial(Material mat, Texture tex, GeometrySequenceStream.MaterialProperties properties, List<string> customProperties)
         {
-            if(mat.mainTextureScale.y > 0)
+            if (mat.mainTextureScale.y > 0)
                 mat.mainTextureScale = new Vector2(mat.mainTextureScale.x, mat.mainTextureScale.y * -1);
 
             if ((GeometrySequenceStream.MaterialProperties.Albedo & properties) == GeometrySequenceStream.MaterialProperties.Albedo)
@@ -205,14 +205,14 @@ namespace BuildingVolumes.Streaming
         {
             if (streamedMeshTexture != null)
                 DestroyImmediate(streamedMeshTexture);
-            
+
 
             if (streamedMeshFilter != null)
                 DestroyImmediate(streamedMeshFilter.sharedMesh);
-            
 
-            if (streamedMeshObject != null)       
-                DestroyImmediate(streamedMeshObject);      
+
+            if (streamedMeshObject != null)
+                DestroyImmediate(streamedMeshObject);
 
 
             if (streamedMeshParent != null)

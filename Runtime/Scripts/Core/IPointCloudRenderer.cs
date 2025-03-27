@@ -1,7 +1,7 @@
 using UnityEngine;
 using Unity.Collections;
 
-namespace BuildingVolumes.Streaming
+namespace BuildingVolumes.Player
 {
     public interface IPointCloudRenderer
     {

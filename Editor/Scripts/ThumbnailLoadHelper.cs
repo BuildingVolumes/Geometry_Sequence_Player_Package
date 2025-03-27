@@ -5,7 +5,7 @@ using UnityEditor;
 using UnityEngine;
 using UnityEditor.Callbacks;
 
-namespace BuildingVolumes.Streaming
+namespace BuildingVolumes.Player
 {
     //Thumbnails are dynamically loaded each time the scene is opened, so that they 
     //won't need to be saved in the scene file.

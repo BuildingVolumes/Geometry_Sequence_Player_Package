@@ -12,7 +12,7 @@ using Unity.PolySpatial;
 using UnityEditor.SceneManagement;
 #endif
 
-namespace BuildingVolumes.Streaming
+namespace BuildingVolumes.Player
 {
     public class GeometrySequenceStream : MonoBehaviour
     {
@@ -251,7 +251,7 @@ namespace BuildingVolumes.Streaming
             (msRenderer as Component).hideFlags = HideFlags.HideAndDontSave;
             msRenderer.Setup(this.transform, reader.sequenceConfig);
 
-            if(meshMaterial != null)
+            if (meshMaterial != null)
                 msRenderer.ChangeMaterial(meshMaterial);
 
             //If we have a single texture in the sequence, we read it immeiatly
@@ -387,7 +387,7 @@ namespace BuildingVolumes.Streaming
                 DestroyImmediate(thumbnailPCRenderer as UnityEngine.Object);
         }
 #endif
-#endregion
+        #endregion
 
         #region Debug
         void AttachFrameDebugger()

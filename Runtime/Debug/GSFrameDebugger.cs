@@ -3,7 +3,7 @@ using UnityEngine;
 using TMPro;
 
 
-namespace BuildingVolumes.Streaming
+namespace BuildingVolumes.Player
 {
     public class GSFrameDebugger : MonoBehaviour
     {
@@ -17,7 +17,7 @@ namespace BuildingVolumes.Streaming
         Canvas canvas;
 
         [SerializeField]
-        TextMeshProUGUI fps_TMP, frameTimeSmoothed_TMP,frameTime_TMP,  targetFrameTime_TMP, applicationFPS_TMP, applicationDeltaTime_TMP, frameDropped_TMP;
+        TextMeshProUGUI fps_TMP, frameTimeSmoothed_TMP, frameTime_TMP, targetFrameTime_TMP, applicationFPS_TMP, applicationDeltaTime_TMP, frameDropped_TMP;
 
         [SerializeField]
         TextMeshProUGUI bufferSize_TMP, bufferIndex_TMP, playbackIndex_TMP;
@@ -38,17 +38,17 @@ namespace BuildingVolumes.Streaming
 
         private void Update()
         {
-            if(lastFramerateLimit != framerateLimit)
+            if (lastFramerateLimit != framerateLimit)
             {
                 QualitySettings.vSyncCount = 0;
 
-                if(framerateLimit > 0)
+                if (framerateLimit > 0)
                     Application.targetFrameRate = framerateLimit;
                 else
                     Application.targetFrameRate = -1;
 
                 lastFramerateLimit = framerateLimit;
-            }            
+            }
 
             float decay = 0.5f;
             smoothedApplicationFPS = decay * smoothedApplicationFPS + (1.0f - decay) * (1.0f / Time.deltaTime);
@@ -65,22 +65,22 @@ namespace BuildingVolumes.Streaming
         {
             reader = sourceStream.bufferedReader;
 
-            if(reader != null)
+            if (reader != null)
             {
                 int bufferTotalSize = reader.bufferSize;
 
-                if(framesViz.Count != bufferTotalSize)
+                if (framesViz.Count != bufferTotalSize)
                 {
-                    foreach(GSFrameViz viz in framesViz)
-                    {   
+                    foreach (GSFrameViz viz in framesViz)
+                    {
                         Destroy(viz.gameObject);
                     }
 
                     framesViz.Clear();
 
-                    for(int i = 0; i < bufferTotalSize; i++)
+                    for (int i = 0; i < bufferTotalSize; i++)
                     {
-                        GameObject go = Instantiate(frameVizPrefab); 
+                        GameObject go = Instantiate(frameVizPrefab);
                         go.transform.SetParent(frameVizGrid.transform, false);
                         GSFrameViz viz = go.GetComponent<GSFrameViz>();
                         framesViz.Add(viz);
@@ -94,7 +94,7 @@ namespace BuildingVolumes.Streaming
                 float decay = 0.95f;
                 smoothedFrameTiming = decay * smoothedFrameTiming + (1.0f - decay) * frameTime;
 
-                int playbackFrame =  sourceStream.lastFrameIndex;
+                int playbackFrame = sourceStream.lastFrameIndex;
                 int bufferIndex = sourceStream.lastFrameBufferIndex;
 
                 Frame[] buffer = reader.frameBuffer;
@@ -104,32 +104,32 @@ namespace BuildingVolumes.Streaming
                 int framesReading = 0;
                 int framesLoading = 0;
 
-                for(int i = 0; i < buffer.Length; i++)
+                for (int i = 0; i < buffer.Length; i++)
                 {
                     framesViz[i].SetBufferState(buffer[i].bufferState);
                     framesViz[i].SetPlaybackFrameNumber(buffer[i].playbackIndex);
                     framesViz[i].SetBufferFrameNumber(i);
 
-                    switch(buffer[i].bufferState)
+                    switch (buffer[i].bufferState)
                     {
                         case BufferState.Empty:
-                        break;
+                            break;
                         case BufferState.Consumed:
-                        break;
+                            break;
                         case BufferState.Reading:
-                        framesReading++;
-                        break;
+                            framesReading++;
+                            break;
                         case BufferState.Loading:
-                        framesLoading++;
-                        break;
+                            framesLoading++;
+                            break;
                         case BufferState.Ready:
-                        totalBufferedFrames++;
-                        break;
+                            totalBufferedFrames++;
+                            break;
 
                     }
                 }
 
-                if(sourceStream.lastFrameBufferIndex > -1)
+                if (sourceStream.lastFrameBufferIndex > -1)
                 {
                     framesViz[sourceStream.lastFrameBufferIndex].SetAsShown();
                 }
@@ -137,20 +137,20 @@ namespace BuildingVolumes.Streaming
                 bool bufferedFrameInSuccession = true;
                 int successionFrame = playbackFrame;
 
-                while(bufferedFrameInSuccession)
+                while (bufferedFrameInSuccession)
                 {
                     successionFrame++;
 
-                    if(successionFrame >= reader.totalFrames)
+                    if (successionFrame >= reader.totalFrames)
                     {
                         successionFrame = 0;
                     }
 
                     bufferedFrameInSuccession = false;
 
-                    foreach(Frame frame in buffer)
+                    foreach (Frame frame in buffer)
                     {
-                        if(frame.playbackIndex == successionFrame && frame.bufferState == BufferState.Ready)
+                        if (frame.playbackIndex == successionFrame && frame.bufferState == BufferState.Ready)
                         {
                             bufferedFrameInSuccession = true;
                             preBufferedFrames++;
@@ -172,7 +172,7 @@ namespace BuildingVolumes.Streaming
                 framesLoading_TMP.text = "Frames Loading (Main Thread): " + framesLoading;
 
                 //Rate the buffer performance based on the percentage of readily available frames
-                fps_TMP.color = PerfRatingReachMaximum(fps, 1000/ targetFrameTime, 0.9f, 0.8f, false);
+                fps_TMP.color = PerfRatingReachMaximum(fps, 1000 / targetFrameTime, 0.9f, 0.8f, false);
                 frameTimeSmoothed_TMP.color = PerfRatingDifference(smoothedFrameTiming, targetFrameTime, 0.1f, 0.2f);
                 frameTime_TMP.color = PerfRatingDifference(frameTime, targetFrameTime, 0.1f, 0.2f);
                 frameDropped_TMP.color = sourceStream.frameDropped ? Color.red : Color.white;
@@ -186,44 +186,44 @@ namespace BuildingVolumes.Streaming
         Color PerfRatingReachMaximum(float isValue, float maxValue, float goodPercentValue, float mediumPercentValue, bool invert)
         {
             float percentage = (1f / maxValue) * isValue;
-            if(percentage > 1f)
-                percentage = 1f;             
-            if(invert)
+            if (percentage > 1f)
+                percentage = 1f;
+            if (invert)
                 percentage = 1f - percentage;
 
-            if(percentage >= goodPercentValue)
+            if (percentage >= goodPercentValue)
                 return Color.green;
-            else if(percentage <= goodPercentValue && percentage >= mediumPercentValue)
+            else if (percentage <= goodPercentValue && percentage >= mediumPercentValue)
                 return Color.yellow;
-            else if(percentage <= mediumPercentValue)
+            else if (percentage <= mediumPercentValue)
                 return Color.red;
             else return Color.white;
         }
-        
+
         Color PerfRatingHitMinimum(float isValue, float minValue, float mediumPercentValue, float badPercentValue)
         {
             float percentage = (1f / minValue) * isValue;
-            if(percentage > 1f)
-                percentage = 1f;             
+            if (percentage > 1f)
+                percentage = 1f;
 
-            if(percentage >= mediumPercentValue)
+            if (percentage >= mediumPercentValue)
                 return Color.green;
-            else if(percentage <= mediumPercentValue && percentage >= badPercentValue)
+            else if (percentage <= mediumPercentValue && percentage >= badPercentValue)
                 return Color.yellow;
-            else if(percentage <= badPercentValue)
+            else if (percentage <= badPercentValue)
                 return Color.red;
             else return Color.white;
         }
 
         Color PerfRatingExceedMinimum(float isValue, float minValue, float mediumExceedPercentage)
         {
-            float percentage = (1f / minValue) * isValue;        
+            float percentage = (1f / minValue) * isValue;
 
-            if(percentage <= 1)
+            if (percentage <= 1)
                 return Color.green;
-            else if(percentage > 1 && percentage <= mediumExceedPercentage)
+            else if (percentage > 1 && percentage <= mediumExceedPercentage)
                 return Color.yellow;
-            else if(percentage >= mediumExceedPercentage)
+            else if (percentage >= mediumExceedPercentage)
                 return Color.red;
             else return Color.white;
         }
@@ -233,11 +233,11 @@ namespace BuildingVolumes.Streaming
             float difference = Mathf.Abs(shouldValue - isValue);
             float percentage = (1f / shouldValue) * difference;
 
-            if(percentage <= goodPercentDifference)
+            if (percentage <= goodPercentDifference)
                 return Color.green;
-            else if(percentage >= goodPercentDifference && percentage <= mediumPercentDifference)
+            else if (percentage >= goodPercentDifference && percentage <= mediumPercentDifference)
                 return Color.yellow;
-            else if(percentage >= mediumPercentDifference)
+            else if (percentage >= mediumPercentDifference)
                 return Color.red;
             else return Color.white;
         }

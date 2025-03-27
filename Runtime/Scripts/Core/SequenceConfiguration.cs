@@ -3,13 +3,13 @@ using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
 
-namespace BuildingVolumes.Streaming
+namespace BuildingVolumes.Player
 {
     public class SequenceConfiguration
     {
-        public enum GeometryType {point = 0, mesh = 1, texturedMesh = 2};
-        public enum TextureMode {None = 0, Single = 1, PerFrame = 2};
-        public enum TextureFormat { NotSupported = 0, DDS = 1, ASTC = 2};
+        public enum GeometryType { point = 0, mesh = 1, texturedMesh = 2 };
+        public enum TextureMode { None = 0, Single = 1, PerFrame = 2 };
+        public enum TextureFormat { NotSupported = 0, DDS = 1, ASTC = 2 };
 
         public GeometryType geometryType;
         public TextureMode textureMode;
@@ -53,13 +53,13 @@ namespace BuildingVolumes.Streaming
                 configuration = JsonUtility.FromJson<SequenceConfiguration>(content);
             }
 
-            catch(Exception e)
+            catch (Exception e)
             {
                 Debug.LogError("Could not parse metadata file! " + e.Message);
                 return null;
             }
 
-            if(configuration.headerSizes.Count == 0 || configuration.verticeCounts.Count == 0)
+            if (configuration.headerSizes.Count == 0 || configuration.verticeCounts.Count == 0)
             {
                 Debug.LogError("Metadata file invalid!");
                 return null;

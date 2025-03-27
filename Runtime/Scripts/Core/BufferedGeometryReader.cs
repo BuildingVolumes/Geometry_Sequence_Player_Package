@@ -9,12 +9,12 @@ using Unity.Jobs;
 using System.Text;
 using System.Linq;
 using System.Text.RegularExpressions;
-using static BuildingVolumes.Streaming.SequenceConfiguration;
+using static BuildingVolumes.Player.SequenceConfiguration;
 using Unity.IO.LowLevel.Unsafe;
 using Unity.Collections.LowLevel.Unsafe;
 using System.Threading;
 
-namespace BuildingVolumes.Streaming
+namespace BuildingVolumes.Player
 {
     public class Frame
     {

@@ -3,7 +3,7 @@ using UnityEngine;
 using UnityEngine.Rendering;
 using Unity.Collections;
 using static TMPro.SpriteAssetUtilities.TexturePacker_JsonArray;
-namespace BuildingVolumes.Streaming
+namespace BuildingVolumes.Player
 {
     public class PointcloudRenderer : MonoBehaviour, IPointCloudRenderer
     {
@@ -222,13 +222,13 @@ namespace BuildingVolumes.Streaming
                 computeShader.Dispatch(0, groupSize, 1, 1);
             }
 
-            if (bufferUpdateIndex == 1) 
+            if (bufferUpdateIndex == 1)
             {
                 computeShader.SetInt(pointCountID2, pointSourceCount2);
                 computeShader.Dispatch(1, groupSize, 1, 1);
             }
 
-            if(bufferUpdateIndex == 2)
+            if (bufferUpdateIndex == 2)
             {
                 computeShader.SetInt(pointCountID3, pointSourceCount3);
                 computeShader.Dispatch(2, groupSize, 1, 1);
@@ -330,10 +330,10 @@ namespace BuildingVolumes.Streaming
             if (rotateToCameraMat != null)
                 rotateToCameraMat.Release();
 
-            if(pcMeshFilter != null)
-                if(pcMeshFilter.sharedMesh == null)
+            if (pcMeshFilter != null)
+                if (pcMeshFilter.sharedMesh == null)
                     DestroyImmediate(pcMeshFilter.sharedMesh);
-            if(pcObject != null)
+            if (pcObject != null)
                 DestroyImmediate(pcObject);
 
             buffersInitialized = false;

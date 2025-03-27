@@ -1,7 +1,7 @@
 using UnityEngine;
 using System.Collections.Generic;
 
-namespace BuildingVolumes.Streaming
+namespace BuildingVolumes.Player
 {
     public interface IMeshSequenceRenderer
     {

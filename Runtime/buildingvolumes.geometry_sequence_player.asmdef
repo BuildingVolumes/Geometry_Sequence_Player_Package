@@ -1,5 +1,5 @@
 {
-    "name": "buildingvolumes.geometry_sequence_streaming",
+    "name": "buildingvolumes.geometry_sequence_player",
     "rootNamespace": "",
     "references": [
         "Unity.Timeline",

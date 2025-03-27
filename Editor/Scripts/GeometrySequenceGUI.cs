@@ -2,7 +2,7 @@ using UnityEditor;
 using UnityEngine;
 using System.IO;
 
-namespace BuildingVolumes.Streaming
+namespace BuildingVolumes.Player
 {
 
     [CustomEditor(typeof(GeometrySequencePlayer))]
@@ -55,7 +55,7 @@ namespace BuildingVolumes.Streaming
             EditorGUILayout.LabelField(new GUIContent(logo), style, GUILayout.MinHeight(50), GUILayout.MinWidth(256), GUILayout.ExpandWidth(true));
             GUILayout.Space(20);
 
-            
+
 
             GUILayout.Label("Set Sequence", EditorStyles.boldLabel);
 
@@ -239,7 +239,7 @@ namespace BuildingVolumes.Streaming
             {
                 if (GUILayout.Button(EditorGUIUtility.IconContent("Animation.Play")))
                 {
-                    if(player.IsInitialized())
+                    if (player.IsInitialized())
                         player.Play();
                     else
                         player.LoadCurrentSequence(true);

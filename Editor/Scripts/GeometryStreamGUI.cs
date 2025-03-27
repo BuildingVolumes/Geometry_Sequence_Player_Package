@@ -3,7 +3,7 @@ using UnityEngine;
 using System;
 using UnityEditor.IMGUI.Controls;
 
-namespace BuildingVolumes.Streaming
+namespace BuildingVolumes.Player
 {
 
     [CustomEditor(typeof(GeometrySequenceStream))]
@@ -86,7 +86,7 @@ namespace BuildingVolumes.Streaming
 
             EditorGUI.BeginChangeCheck();
             EditorGUILayout.PropertyField(pointEmission);
-            if(EditorGUI.EndChangeCheck())
+            if (EditorGUI.EndChangeCheck())
                 stream.SetPointEmission(pointEmission.floatValue);
 
             GUILayout.Space(10);
@@ -122,7 +122,7 @@ namespace BuildingVolumes.Streaming
             showInfo = EditorGUILayout.Foldout(showInfo, "Frame Info");
             if (showInfo)
             {
-		EditorGUI.BeginDisabledGroup(true);
+                EditorGUI.BeginDisabledGroup(true);
                 EditorGUILayout.LabelField("Currently played frame: " + currentFrame.intValue);
                 EditorGUILayout.LabelField("Target frame time in ms:    " + targetFrameTiming.floatValue.ToString("0"));
                 EditorGUILayout.LabelField("Current frame time in ms:   " + currentFrameTiming.floatValue.ToString("0"));
@@ -141,7 +141,7 @@ namespace BuildingVolumes.Streaming
 
             serializedObject.ApplyModifiedProperties();
 
-            if(updateMaterial)
+            if (updateMaterial)
                 stream.SetMeshMaterial(stream.meshMaterial);
         }
     }

@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using UnityEngine.Rendering;
 using UnityEngine;
 
-namespace BuildingVolumes.Streaming
+namespace BuildingVolumes.Player
 {
     public class MeshSequenceRendererSC : MonoBehaviour, IMeshSequenceRenderer
     {

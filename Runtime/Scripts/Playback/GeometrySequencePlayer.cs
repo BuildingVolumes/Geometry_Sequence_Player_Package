@@ -4,7 +4,7 @@ using System.IO;
 using UnityEngine;
 using UnityEngine.Events;
 
-namespace BuildingVolumes.Streaming
+namespace BuildingVolumes.Player
 {
     public class GeometrySequencePlayer : MonoBehaviour
     {
@@ -35,7 +35,7 @@ namespace BuildingVolumes.Streaming
         {
             SetupGeometryStream();
 
-            if(playAtStart)
+            if (playAtStart)
                 if (!OpenSequence(relativePath, pathRelation, playbackFPS, playAtStart))
                     Debug.LogError("Could not open sequence! Please check the path and files!");
         }
@@ -314,7 +314,7 @@ namespace BuildingVolumes.Streaming
             return stream.readerInitialized;
         }
 
-   
+
 
         /// <summary>
         /// Is the current clip playing?
@@ -341,7 +341,7 @@ namespace BuildingVolumes.Streaming
         public int GetCurrentFrameIndex()
         {
             if (stream != null)
-                return stream.lastFrameIndex ;
+                return stream.lastFrameIndex;
             return -1;
         }
 
@@ -495,7 +495,7 @@ namespace BuildingVolumes.Streaming
             stream.ClearEditorThumbnail();
         }
 #endif
-#endregion
+        #endregion
 
         #region Obsolete
 

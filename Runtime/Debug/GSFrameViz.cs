@@ -2,9 +2,9 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using TMPro;
-using BuildingVolumes.Streaming;
+using BuildingVolumes.Player;
 
-namespace BuildingVolumes.Streaming
+namespace BuildingVolumes.Player
 {
     public class GSFrameViz : MonoBehaviour
     {
