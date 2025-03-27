@@ -2,7 +2,7 @@
   "name": "com.buildingvolumes.geometry_sequence_player",
   "version": "1.1.0",
   "displayName": "Geometry Sequence Player",
-  "description": "This package allows you to efficiently play large pointcloud and mesh sequences (e.g. volumetric video).",
+  "description": "This package allows you to efficiently playback large geometry (pointcloud and mesh) sequences.",
   "unity": "2022.1",
   "documentationUrl": "https://buildingvolumes.github.io/Unity_Geometry_Sequence_Player/",
   "changelogUrl": "https://buildingvolumes.github.io/Unity_Geometry_Sequence_Player/docs/about/changelog/",
