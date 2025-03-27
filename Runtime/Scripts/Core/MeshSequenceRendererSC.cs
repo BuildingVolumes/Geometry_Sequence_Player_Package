@@ -195,7 +195,11 @@ namespace BuildingVolumes.Streaming
 
         public void ChangeMaterial(Material material)
         {
-            ChangeMaterial(material, GeometrySequenceStream.MaterialProperties.Albedo, null);
+            if (material != null)
+                ChangeMaterial(material, GeometrySequenceStream.MaterialProperties.Albedo, null);
+            else
+                ChangeMaterial(defaultMeshMaterial, GeometrySequenceStream.MaterialProperties.Albedo, null);
+
         }
 
         public void ChangeMaterial(Material material, GeometrySequenceStream.MaterialProperties properties, List<string> customProperties)
