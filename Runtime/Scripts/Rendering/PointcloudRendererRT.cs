@@ -4,18 +4,6 @@ using BuildingVolumes.Player;
 using System.Collections;
 using System.Collections.Generic;
 
-public struct Quad
-{
-    public Vector3 vertex1;
-    public Vector2 uv1;
-    public Vector3 vertex2;
-    public Vector2 uv2;
-    public Vector3 vertex3;
-    public Vector2 uv3;
-    public Vector3 vertex4;
-    public Vector2 uv4;
-}
-
 public class PointcloudRendererRT : MonoBehaviour, IPointCloudRenderer
 {
     ComputeShader computeShaderRT;
@@ -24,7 +12,7 @@ public class PointcloudRendererRT : MonoBehaviour, IPointCloudRenderer
     int rtResolution;
     float currentPointSize = 0;
     float currentPointEmission = 1;
-    int safePointCount = 2000;
+    int meshletQuadCount = 2000;
 
 
     GraphicsBuffer pointSourceBuffer;
@@ -114,17 +102,13 @@ public class PointcloudRendererRT : MonoBehaviour, IPointCloudRenderer
     /// and also distribute the mesh over multiple Meshfilters.
     /// Otherwise, we risk fatal crashes where the AVP needs to restart
     /// </summary>
-    /// <param name="maxPointCount"></param>
-    /// <param name="pointSize"></param>
-    /// <param name="config"></param>
-    /// <returns></returns>
     IEnumerator MeshCreation(SequenceConfiguration config, float pointSize, float pointEmission, GeometrySequenceStream.PointType pointType)
     {
         //Wait a few seconds when the app has just started, otherwise we risk crashing polyspatial
         if (Time.time < 3f && Application.isPlaying)
             yield return new WaitForSeconds(3f - Time.time);
 
-        int meshPartCount = Mathf.CeilToInt((float)config.maxVertexCount / safePointCount);
+        int meshPartCount = Mathf.CeilToInt((float)config.maxVertexCount / meshletQuadCount);
 
         meshObjects = new List<GameObject>();
         meshFilters = new List<MeshFilter>();
@@ -237,7 +221,7 @@ public class PointcloudRendererRT : MonoBehaviour, IPointCloudRenderer
     {
         Material newMat = new Material(mat);
         newMat.SetFloat(rtResolutionID, rtResolution);
-        newMat.SetFloat(rtVertexOffsetID, meshletIndex * safePointCount * 4);
+        newMat.SetFloat(rtVertexOffsetID, meshletIndex * meshletQuadCount * 4);
         newMat.SetFloat(pointScaleID, pointSize);
         newMat.SetFloat(pointEmissionID, pointEmission);
         newMat.SetTexture(rtPositionSourceID, rtPositions);
