@@ -303,7 +303,7 @@ namespace BuildingVolumes.Player
             meshSequenceRenderer.Hide();
         }
 
-        void Dispose()
+        public void Dispose()
         {
             pointcloudRenderer?.Dispose();
             meshSequenceRenderer?.Dispose();

@@ -155,6 +155,14 @@ namespace BuildingVolumes.Player
         }
 
         /// <summary>
+        /// Terminates playback of the current sequence and removes it from the player
+        /// </summary>
+        public void ClearSequence()
+        {
+            stream.Dispose();
+        }
+
+        /// <summary>
         /// Start Playback from the current location. 
         /// </summary>
         public void Play()
