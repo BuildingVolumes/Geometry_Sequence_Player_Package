@@ -489,7 +489,7 @@ namespace BuildingVolumes.Player
             if (stream == null)
                 stream = GetComponent<GeometrySequenceStream>();
 
-            if (GetRelativeSequencePath().Length == 0)
+            if (pathToSequence.Length == 0)
                 return;
 
             stream.LoadEditorThumbnail(pathToSequence);
