@@ -45,14 +45,14 @@ namespace BuildingVolumes.Player
             GUILayout.FlexibleSpace();
             if (GUILayout.Button("Documentation", GUILayout.MaxWidth(100)))
             {
-                Application.OpenURL("https://buildingvolumes.github.io/Unity_Geometry_Sequence_Streaming/docs/quickstart/quick-start/");
+                Application.OpenURL("https://buildingvolumes.github.io/Unity_Geometry_Sequence_Player/docs/quickstart/quick-start/");
             }
             EditorGUILayout.EndHorizontal();
 
             GeometrySequencePlayer player = (GeometrySequencePlayer)target;
             Texture2D logo = (Texture2D)Resources.Load("gss_logo");
             GUIStyle style = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleCenter };
-            EditorGUILayout.LabelField(new GUIContent(logo), style, GUILayout.MinHeight(50), GUILayout.MinWidth(256), GUILayout.ExpandWidth(true));
+            EditorGUILayout.LabelField(new GUIContent(logo), style, GUILayout.MinHeight(50), GUILayout.MinWidth(128), GUILayout.ExpandWidth(true));
             GUILayout.Space(20);
 
 
