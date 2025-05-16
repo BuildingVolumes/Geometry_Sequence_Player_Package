@@ -6,7 +6,7 @@
   "unity": "2022.1",
   "documentationUrl": "https://buildingvolumes.github.io/Unity_Geometry_Sequence_Player/",
   "changelogUrl": "https://buildingvolumes.github.io/Unity_Geometry_Sequence_Player/docs/about/changelog/",
-  "licensesUrl": "https://buildingvolumes.github.io/Unity_Geometry_Sequence_Player/docs/about/license-credits/",
+  "licensesUrl": "https://buildingvolumes.github.io/Unity_Geometry_Sequence_Player/docs/about/license-and-credits/",
   "dependencies": {
     "com.unity.jobs": "0.70.0-preview.7",
     "com.unity.timeline": "1.6.4"
@@ -26,15 +26,15 @@
     "Frames"
   ],
   "author": {
-    "name": "Christopher Remde",
+    "name": "BuildingVolumes",
     "email": "hey@chrisrem.de",
     "url": "https://chrisrem.de/"
   },
   "samples": [
     {
-      "displayName": "Sequence Playback Samples",
+      "displayName": "Sequence Samples",
       "description": "These samples show you how to playback a geometry sequence using the editor, timeline and API. Also contains short sample sequences for both meshes and pointclouds",
-      "path": "Samples~/StreamingSamples"
+      "path": "Samples~/SequenceSamples"
     }
   ],
   "type": "tool"
