@@ -299,8 +299,8 @@ namespace BuildingVolumes.Player
 
         public void HideSequence()
         {
-            pointcloudRenderer.Hide();
-            meshSequenceRenderer.Hide();
+            pointcloudRenderer?.Hide();
+            meshSequenceRenderer?.Hide();
         }
 
         public void Dispose()
