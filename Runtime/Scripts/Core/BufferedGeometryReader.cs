@@ -9,83 +9,85 @@ using Unity.Jobs;
 using System.Text;
 using System.Linq;
 using System.Text.RegularExpressions;
+using static BuildingVolumes.Player.SequenceConfiguration;
+using Unity.IO.LowLevel.Unsafe;
+using Unity.Collections.LowLevel.Unsafe;
+using System.Threading;
 
-
-namespace BuildingVolumes.Streaming
+namespace BuildingVolumes.Player
 {
-
-    public struct Frame
+    public class Frame
     {
-        public HeaderPLY plyHeaderInfo;
-        public Mesh.MeshDataArray meshArray;
+        public NativeArray<byte> vertexBufferRaw;
+        public NativeArray<byte> indiceBufferRaw;
+        public NativeArray<byte> indiceIntermediateBuffer;
+        public NativeArray<byte> textureBufferRaw;
+
+        public SequenceConfiguration sequenceConfiguration;
+
         public ReadGeometryJob geoJob;
         public JobHandle geoJobHandle;
-
-        public HeaderDDS ddsHeaderInfo;
-        public NativeArray<byte> textureBufferRaw;
         public ReadTextureJob textureJob;
         public JobHandle textureJobHandle;
-        public TextureMode textureMode;
 
+        public BufferState bufferState = BufferState.Empty;
+        public int readBufferSize;
         public int playbackIndex;
-        public bool isDisposed;
-    }
+        public float finishedBufferingTime;
 
-    public struct HeaderPLY
-    {
-        public MeshTopology meshType;
-        public bool hasUVs;
-        public int vertexCount;
-        public int indexCount;
-        public int byteCount;
-        public bool error;
-    }
-
-    public struct HeaderDDS
-    {
-        public int width;
-        public int height;
-        public int size;
-        public bool error;
+        public Frame()
+        {
+            playbackIndex = 0;
+            bufferState = BufferState.Empty;
+        }
     }
 
     public enum TextureMode { None, Single, PerFrame };
 
+    public enum BufferState { Empty, Consumed, Reading, Loading, Ready, Playing }
+
     public class BufferedGeometryReader
     {
         public string folder;
+        public SequenceConfiguration sequenceConfig;
         public string[] plyFilePaths;
-        public string[] texturesFilePath;
+        public string[] texturesFilePathDDS;
+        public string[] texturesFilePathASTC;
         public int bufferSize = 4;
         public int totalFrames = 0;
-
+        public int frameCount = 0;
         public Frame[] frameBuffer;
+
+        public GameObject streamParent;
+        public Material materialSource;
 
         bool buffering = true;
 
         /// <summary>
-        /// Create a new buffered reader. You must include a path to a valid folder
+        /// Create a new buffered reader. 
         /// </summary>
-        /// <param name="folder">A path to a folder containing .ply geometry files and optionally .dds texture files</param>
-        public BufferedGeometryReader(string folder, int frameBufferSize)
+        public BufferedGeometryReader()
         {
-            SetupReader(folder, frameBufferSize);
         }
 
         ~BufferedGeometryReader()
         {
             //When the reader is destroyed, we need to ensure that all the NativeArrays will also be manually deleted/disposed
-            DisposeAllFrames(true, true, true);
+            DisposeFrameBuffer(true);
         }
 
         /// <summary>
-        /// Use this function to setup a new buffered Reader. Don't forget to also setup the texture Reader, even if you don't use textures!
+        /// Use this function to setup a new buffered Reader.
         /// </summary>
         /// <param name="folder">A path to a folder containing .ply geometry files and optionally .dds texture files</param>
         /// <returns>Returns true on success, false when any errors have occured during setup</returns>
         public bool SetupReader(string folder, int frameBufferSize)
         {
             this.folder = folder;
+
+            sequenceConfig = LoadConfigFromFile(folder);
+            if (sequenceConfig == null)
+                return false;
 
             try
             {
@@ -96,209 +98,286 @@ namespace BuildingVolumes.Streaming
 
             catch (Exception e)
             {
-                UnityEngine.Debug.LogError("Sequence path is not valid or has restricted access! Path: " + folder);
+                Debug.LogError("Sequence path is not valid or has restricted access! Path: " + folder + " Error: " + e.Message);
                 return false;
             }
 
             if (plyFilePaths.Length == 0)
             {
-                UnityEngine.Debug.LogError("No .ply files in the sequence directory: " + folder);
+                Debug.LogError("No .ply files in the sequence directory: " + folder);
                 return false;
+            }
+
+            if (plyFilePaths.Length != sequenceConfig.verticeCounts.Count)
+            {
+                Debug.LogError("Could not find all required .ply files, make sure your sequence doesn't miss any!");
+                return false;
+            }
+
+            if (sequenceConfig.textureMode != SequenceConfiguration.TextureMode.None)
+            {
+                if (sequenceConfig.DDS && GetDeviceDependentTextureFormat() == SequenceConfiguration.TextureFormat.DDS)
+                {
+                    try
+                    {
+                        //Add a temporary padding to the file list, as otherwise the file order will be messed up
+                        texturesFilePathDDS = new List<string>(Directory.GetFiles(folder, "*.dds")).OrderBy(file =>
+                        Regex.Replace(file, @"\d+", match => match.Value.PadLeft(9, '0'))).ToArray<string>();
+                    }
+
+                    catch (Exception e)
+                    {
+                        Debug.LogError("Sequence path is not valid or has restricted access! Path: " + folder + " Error: " + e.Message);
+                        return false;
+                    }
+
+                    if (texturesFilePathDDS.Length == 0)
+                    {
+                        Debug.LogError("No .dds texture files (for desktop devices) could be found! Make sure that you converted and uploaded .dds textures for this device!");
+                        return false;
+                    }
+
+                    if (sequenceConfig.textureMode == SequenceConfiguration.TextureMode.PerFrame)
+                    {
+                        if (texturesFilePathDDS.Length != sequenceConfig.verticeCounts.Count)
+                        {
+                            Debug.LogError("Could not find all required .dds texture files, make sure your sequence doesn't miss any!");
+                            return false;
+                        }
+                    }
+                }
+
+                if (sequenceConfig.ASTC && GetDeviceDependentTextureFormat() == SequenceConfiguration.TextureFormat.ASTC)
+                {
+                    try
+                    {
+                        //Add a temporary padding to the file list, as otherwise the file order will be messed up
+                        texturesFilePathASTC = new List<string>(Directory.GetFiles(folder, "*.astc")).OrderBy(file =>
+                        Regex.Replace(file, @"\d+", match => match.Value.PadLeft(9, '0'))).ToArray<string>();
+                    }
+
+                    catch (Exception e)
+                    {
+                        Debug.LogError("Sequence path is not valid or has restricted access! Path: " + folder + " Error: " + e.Message);
+                        return false;
+                    }
+
+                    if (texturesFilePathASTC.Length == 0)
+                    {
+                        Debug.LogError("No .astc texture files (for mobile devices) could be found! Make sure that you converted and uploaded .astc texture files to this device!");
+                        return false;
+                    }
+
+                    if (sequenceConfig.textureMode == SequenceConfiguration.TextureMode.PerFrame)
+                    {
+                        if (texturesFilePathASTC.Length != sequenceConfig.verticeCounts.Count)
+                        {
+                            Debug.LogError("Could not find all required .atsc texture files, make sure your sequence doesn't miss any!");
+                            return false;
+                        }
+                    }
+
+#if UNITY_EDITOR
+                    if (texturesFilePathASTC.Length > 0 && texturesFilePathDDS.Length == 0)
+                    {
+                        Debug.LogError("Only .astc texture files for mobile devices have been found in your sequence." +
+                            "Astc Textures cannot not be displayed in the editor. To display textures in the editor" +
+                            "please additionally generate .dds textures with the converter utility!");
+                    }
+#endif
+                }
+
+
+
             }
 
             bufferSize = frameBufferSize;
             totalFrames = plyFilePaths.Length;
+
+
+            if (bufferSize > totalFrames)
+                bufferSize = totalFrames - 1;
+
+            if (bufferSize < 1)
+                bufferSize = 1;
+
             frameBuffer = new Frame[bufferSize];
 
             for (int i = 0; i < frameBuffer.Length; i++)
             {
-                frameBuffer[i].isDisposed = true;
+                frameBuffer[i] = new Frame();
+                frameBuffer[i].sequenceConfiguration = sequenceConfig;
+                AllocateFrame(frameBuffer[i], sequenceConfig, i);
                 frameBuffer[i].playbackIndex = -1;
             }
 
             return true;
+
         }
-
-        /// <summary>
-        /// Setup the texture reader. You need to set up a texture reader even when you don't use textures!
-        /// </summary>
-        /// <param name="textureMode">Select between no textures, a single texture for the whole sequence or one texture per frame</param>
-        /// <param name="headerDDS">Include the header data from the first texture in the folder, you can read it with ReadDDSHeader() </param>
-        /// <returns>Returns true on success, false when any error has occured</returns>
-        public bool SetupTextureReader(TextureMode textureMode, HeaderDDS headerDDS)
-        {
-            if (textureMode != TextureMode.None)
-            {
-                try
-                {
-                    texturesFilePath = new List<string>(Directory.GetFiles(folder, "*.dds")).OrderBy(file =>
-                    Regex.Replace(file, @"\d+", match => match.Value.PadLeft(9, '0'))).ToArray<string>();
-                }
-
-                catch (Exception e)
-                {
-                    UnityEngine.Debug.LogError("Texture could not be found !");
-                    return false;
-                }
-
-                if (plyFilePaths.Length == 0)
-                {
-                    UnityEngine.Debug.LogError("Could not find any .dds files in the directory!");
-                    return false;
-                }
-            }
-
-            for (int i = 0; i < frameBuffer.Length; i++)
-            {
-                frameBuffer[i].textureMode = textureMode;
-
-                if (textureMode == TextureMode.PerFrame)
-                    frameBuffer[i].textureBufferRaw = new NativeArray<byte>(headerDDS.size, Allocator.Persistent);
-                else
-                    frameBuffer[i].textureBufferRaw = new NativeArray<byte>(1, Allocator.Persistent); //We allocate one byte to indicate that this texture buffer is not null
-
-            }
-
-            return true;
-        }
-
 
         /// <summary>
         /// Loads new frames in the buffer if there are free slots. Call this every frame
         /// </summary>
-        public void BufferFrames(int currentPlaybackFrame)
+        public void BufferFrames(int targetPlaybackIndex, int lastPlaybackIndex)
         {
+
             if (!buffering)
                 return;
 
-            if (currentPlaybackFrame < 0 || currentPlaybackFrame > totalFrames)
+            if (targetPlaybackIndex < 0 || targetPlaybackIndex > totalFrames)
                 return;
 
-            //Debug.Log("Buffer frame routine, current Frame: " + currentPlaybackFrame);
-
-            //Delete frames from buffer that are outside our current buffer range
-            //which keeps our buffer clean in case of skips or lags
-            DeleteFramesOutsideOfBufferRange(currentPlaybackFrame);
+            //Mark frames from buffer that are outside our current buffer range
+            //as okay to be overwritten, which keeps our buffer moving forward in case of skips or lags
+            DeletePastFrames(targetPlaybackIndex, lastPlaybackIndex);
 
             //Find out which frames we need to buffer. The buffer is a ring
             //buffer, so that when the playback loops, the whole clip doesn't need
             //to reload, but the frames should be ready.
-            int minPlaybackIndex = currentPlaybackFrame;
-            int maxPlaybackIndex = currentPlaybackFrame + (bufferSize - 1);
-            if (maxPlaybackIndex >= totalFrames)
-                maxPlaybackIndex -= (totalFrames - 1);
             List<int> framesToBuffer = new List<int>();
 
-            int playbackIndex = minPlaybackIndex;
-            for (int i = 0; i < bufferSize; i++)
+            //Look for the frames we could potentially buffer
+            for (int i = 0; i < totalFrames; i++)
             {
-                if (playbackIndex >= totalFrames)
-                    playbackIndex = 0;
+                //In case our buffer is larger than the whole sequence
+                if (framesToBuffer.Count >= totalFrames)
+                    continue;
 
-                if (GetBufferIndexForPlaybackIndex(playbackIndex) == -1)
+                if (targetPlaybackIndex >= totalFrames)
+                    targetPlaybackIndex = 0;
+
+                int bufferIndex = GetBufferIndex(targetPlaybackIndex);
+                if (bufferIndex == -1) //The frame is not already buffered
                 {
-                    framesToBuffer.Add(playbackIndex);
+                    framesToBuffer.Add(targetPlaybackIndex);
+                    //Debug.Log("Buffer requested for frame " + targetPlaybackIndex + " in buffer " + i);
                 }
 
-                playbackIndex++;
+                targetPlaybackIndex++;
             }
 
+            //Check if we have any free buffer space to buffer more frames
             for (int i = 0; i < frameBuffer.Length; i++)
             {
                 //Check if the buffer is ready to load the next frame 
-                if (frameBuffer[i].isDisposed && framesToBuffer.Count > 0)
+                if ((frameBuffer[i].bufferState == BufferState.Consumed || frameBuffer[i].bufferState == BufferState.Empty) && framesToBuffer.Count > 0)
                 {
                     int newPlaybackIndex = framesToBuffer[0];
 
                     if (newPlaybackIndex < totalFrames)
                     {
-                        Frame newFrame = frameBuffer[i];
-
-                        newFrame.meshArray = Mesh.AllocateWritableMeshData(1);
-
-                        newFrame.playbackIndex = newPlaybackIndex;
-                        newFrame = ScheduleGeometryReadJob(newFrame, plyFilePaths[newPlaybackIndex]);
-
-                        if (newFrame.textureMode == TextureMode.PerFrame && !newFrame.plyHeaderInfo.error)
-                            newFrame = ScheduleTextureJob(newFrame, texturesFilePath[newPlaybackIndex]);
-
-                        if (newFrame.plyHeaderInfo.error || newFrame.ddsHeaderInfo.error)
-                        {
-                            newFrame.meshArray.Dispose();
-                            //If the mesh isn't in the right format, we simply skip it
-                            framesToBuffer.Remove(newPlaybackIndex);
-                            continue;
-                        }
-
-                        newFrame.isDisposed = false;
-                        frameBuffer[i] = newFrame;
+                        //Debug.Log("Buffering Frame: " + newPlaybackIndex + " at buffer " + i);
+                        ScheduleFrame(frameBuffer[i], newPlaybackIndex);
                         framesToBuffer.Remove(newPlaybackIndex);
                     }
                 }
+
             }
 
             JobHandle.ScheduleBatchedJobs();
+
+            CheckFramesForCompletion();
         }
 
-        public Frame LoadSingleFrame(string geoPath, string texturePath)
-        {
-            Frame newFrame = new Frame();
-            newFrame.meshArray = Mesh.AllocateWritableMeshData(1);
-            newFrame = ScheduleGeometryReadJob(newFrame, geoPath);
-            newFrame.geoJobHandle.Complete();
 
-            if(texturePath != null && texturePath.Length > 0)
+        public void ScheduleFrame(Frame frame, int newPlaybackIndex)
+        {
+            SetupFrameForReading(frame, sequenceConfig, newPlaybackIndex);
+            ScheduleGeometryReadJob(frame, plyFilePaths[newPlaybackIndex]);
+            if (sequenceConfig.textureMode == SequenceConfiguration.TextureMode.PerFrame)
+                ScheduleTextureReadJob(frame, GetDeviceDependendentTexturePath(newPlaybackIndex));
+
+        }
+
+        public void CheckFramesForCompletion()
+        {
+            foreach (Frame frame in frameBuffer)
             {
-                newFrame = ScheduleTextureJob(newFrame, texturePath);
-                newFrame.textureJobHandle.Complete();
+                if (IsFrameBuffered(frame) && frame.bufferState == BufferState.Reading)
+                    frame.bufferState = BufferState.Ready;
+            }
+        }
+
+        public void SetupFrameForReading(Frame frame, SequenceConfiguration config, int index)
+        {
+            frame.sequenceConfiguration = config;
+            frame.playbackIndex = index;
+            frame.bufferState = BufferState.Reading;
+        }
+
+        void AllocateFrame(Frame frame, SequenceConfiguration config, int bufferIndex)
+        {
+            frame.sequenceConfiguration.geometryType = config.geometryType;
+            frame.geoJob = new ReadGeometryJob();
+            frame.textureJob = new ReadTextureJob();
+
+            //Allocate every frame with the highest amount of vertices and indices being used in this sequence. 
+            //This way, we can re-use the meshArrays, instead of re-allocating them each frame
+            if (config.geometryType == GeometryType.point)
+            {
+                frame.vertexBufferRaw = new NativeArray<byte>(config.maxVertexCount * 4 * 4, Allocator.Persistent);
+                frame.indiceBufferRaw = new NativeArray<byte>(1, Allocator.Persistent);
+                frame.indiceIntermediateBuffer = new NativeArray<byte>(1, Allocator.Persistent);
             }
 
-            return newFrame;
+            else
+            {
+                int vertexSizeBytes = sequenceConfig.hasUVs ? config.maxVertexCount * 5 * 4 : config.maxVertexCount * 3 * 4;
+                frame.vertexBufferRaw = new NativeArray<byte>(vertexSizeBytes, Allocator.Persistent);
+                frame.indiceBufferRaw = new NativeArray<byte>(config.maxIndiceCount * 4, Allocator.Persistent);
+                frame.indiceIntermediateBuffer = new NativeArray<byte>((config.maxIndiceCount * 4) + config.maxIndiceCount, Allocator.Persistent);
+            }
+
+            frame.sequenceConfiguration.textureMode = config.textureMode;
+
+            if (config.textureMode == SequenceConfiguration.TextureMode.PerFrame)
+                frame.textureBufferRaw = new NativeArray<byte>(GetDeviceDependentTextureSize(config), Allocator.Persistent);
+            else if (config.textureMode == SequenceConfiguration.TextureMode.Single && frame.playbackIndex == 0)
+                frame.textureBufferRaw = new NativeArray<byte>(GetDeviceDependentTextureSize(config), Allocator.Persistent);
+            else
+                frame.textureBufferRaw = new NativeArray<byte>(1, Allocator.Persistent);
+
         }
 
-
         /// <summary>
-        /// Deletes frames that are either in the past of current Frame index,
-        /// or too far in the future (the whole buffer size away from the current Frame Index)
-        /// Should be regularily called to keep the buffer clean
+        /// Marks frames that are in the past of current Frame index
+        /// Should be regularily called to keep the buffer clean in case of skips/lag
         /// </summary>
-        /// <param name="currentFrameIndex">The currently shown/played back frame</param>
-        public void DeleteFramesOutsideOfBufferRange(int currentFrameIndex)
+        /// <param name="targetPlaybackIndex">The currently shown/played back frame</param>
+        public void DeletePastFrames(int targetPlaybackIndex, int lastPlaybackIndex)
         {
-            //We want to treat the buffer as a ring buffer, so that when we're looping,
-            //the playback doesn't stutter. This means if the current Frame index is near
-            //the end of the buffer, our buffer range extends to the beginning again
-
-            int minFrame = currentFrameIndex;
-            int maxframe = currentFrameIndex + bufferSize;
-            if (maxframe >= totalFrames)
-                maxframe -= (totalFrames - 1);
+            //We want to keep all frames in the buffer, which are one buffersize ahead of
+            //the target Frame, as these will be played soon. Outside of that range, all frames can be deleted 
+            int targetMaxFrame = targetPlaybackIndex + bufferSize;
+            if (targetMaxFrame >= totalFrames)
+                targetMaxFrame = targetMaxFrame % totalFrames;
 
             for (int i = 0; i < frameBuffer.Length; i++)
             {
-                bool dispose = true;
+                bool dispose = false;
                 int playbackIndex = frameBuffer[i].playbackIndex;
 
-                if(minFrame < maxframe)
+                //If the target max frame has already looped around the ringbuffer
+                if (targetMaxFrame < targetPlaybackIndex)
                 {
-                    if (playbackIndex >= minFrame && playbackIndex < maxframe)
-                        dispose = false;
+                    if (playbackIndex < targetPlaybackIndex && playbackIndex > targetMaxFrame)
+                        dispose = true;
                 }
 
                 else
                 {
-                    if (playbackIndex >= maxframe || playbackIndex < maxframe)
-                        dispose = false;
-                }            
+                    if (playbackIndex < targetPlaybackIndex || playbackIndex > targetMaxFrame)
+                        dispose = true;
+                }
 
                 if (dispose)
                 {
-                    if (!frameBuffer[i].isDisposed)
+                    if (playbackIndex != lastPlaybackIndex)
                     {
-                        bool disposed = DisposeFrame(i, false, false);
+                        frameBuffer[i].bufferState = BufferState.Empty;
+                        //Debug.Log("Deleting frame " + playbackIndex + " from Buffer " + i);
                     }
                 }
-                    
             }
         }
 
@@ -313,7 +392,7 @@ namespace BuildingVolumes.Streaming
             {
                 if (frameBuffer[i].playbackIndex == playbackIndex)
                 {
-                    if (IsFrameBuffered(frameBuffer[i]))
+                    if (frameBuffer[i].bufferState == BufferState.Ready)
                     {
                         return i;
                     }
@@ -325,7 +404,7 @@ namespace BuildingVolumes.Streaming
             return -1;
         }
 
-        public int GetBufferIndexForPlaybackIndex(int playbackIndex)
+        public int GetBufferIndex(int playbackIndex)
         {
             for (int i = 0; i < frameBuffer.Length; i++)
             {
@@ -335,6 +414,7 @@ namespace BuildingVolumes.Streaming
 
             return -1;
         }
+
 
         /// <summary>
         /// Get the total amount of frames that are fully stored in buffer
@@ -362,9 +442,9 @@ namespace BuildingVolumes.Streaming
         /// <returns></returns>
         public bool IsFrameBuffered(Frame frame)
         {
-            if (frame.geoJobHandle.IsCompleted && !frame.isDisposed)
+            if (frame.geoJobHandle.IsCompleted)
             {
-                if (frame.textureMode == TextureMode.PerFrame)
+                if (sequenceConfig.textureMode == SequenceConfiguration.TextureMode.PerFrame)
                 {
                     if (frame.textureJobHandle.IsCompleted)
                         return true;
@@ -378,6 +458,49 @@ namespace BuildingVolumes.Streaming
         }
 
 
+        public int GetDeviceDependentTextureSize(SequenceConfiguration configuration)
+        {
+            SequenceConfiguration.TextureFormat format = GetDeviceDependentTextureFormat();
+
+            switch (format)
+            {
+                case SequenceConfiguration.TextureFormat.DDS:
+                    return configuration.textureSizeDDS;
+                case SequenceConfiguration.TextureFormat.ASTC:
+                    return configuration.textureSizeASTC;
+                case SequenceConfiguration.TextureFormat.NotSupported:
+                default:
+                    return 0;
+            }
+        }
+
+        public string GetDeviceDependendentTexturePath(int playbackIndex)
+        {
+            SequenceConfiguration.TextureFormat format = GetDeviceDependentTextureFormat();
+
+            switch (format)
+            {
+                case SequenceConfiguration.TextureFormat.DDS:
+                    if (texturesFilePathDDS == null)
+                        return "";
+                    if (texturesFilePathDDS.Length < playbackIndex)
+                        return "";
+                    return texturesFilePathDDS[playbackIndex];
+                case SequenceConfiguration.TextureFormat.ASTC:
+                    if (texturesFilePathASTC == null)
+                        return "";
+                    if (texturesFilePathASTC.Length < playbackIndex)
+                        return "";
+                    return texturesFilePathASTC[playbackIndex];
+                case SequenceConfiguration.TextureFormat.NotSupported:
+                default:
+                    return "";
+            }
+        }
+
+
+
+
         /// <summary>
         /// Schedules a Job that reads a .ply Pointcloud or mesh file from disk
         /// and loads it into memory.
@@ -385,304 +508,89 @@ namespace BuildingVolumes.Streaming
         /// <param name="frame">The frame into which to load the data. The meshdataarray needs to be initialized already</param>
         /// <param name="plyPath">The absolute path to the .ply file </param>
         /// <returns></returns>
-        public Frame ScheduleGeometryReadJob(Frame frame, string plyPath)
+        public void ScheduleGeometryReadJob(Frame frame, string plyPath)
         {
-            frame.geoJob = new ReadGeometryJob();
-
-            frame.plyHeaderInfo = ReadPLYHeader(plyPath);
-
-            if (frame.plyHeaderInfo.error)
-                return frame;
-
-            VertexAttributeDescriptor[] layout = new VertexAttributeDescriptor[0];
-
-            if (frame.plyHeaderInfo.meshType == MeshTopology.Points)
-            {
-                layout = new[] {
-            new VertexAttributeDescriptor(VertexAttribute.Position, VertexAttributeFormat.Float32, 3),
-            new VertexAttributeDescriptor(VertexAttribute.Color, VertexAttributeFormat.UNorm8, 4) };
-            }
-
-            else if (frame.plyHeaderInfo.meshType == MeshTopology.Triangles)
-            {
-                if (frame.plyHeaderInfo.hasUVs)
-                {
-                    layout = new[] { new VertexAttributeDescriptor(VertexAttribute.Position, VertexAttributeFormat.Float32, 3),
-            new VertexAttributeDescriptor(VertexAttribute.TexCoord0, VertexAttributeFormat.Float32, 2) };
-                }
-
-                else
-                {
-                    layout = new[] { new VertexAttributeDescriptor(VertexAttribute.Position, VertexAttributeFormat.Float32, 3)};
-                }
-            }
-
-            frame.meshArray[0].SetVertexBufferParams(frame.plyHeaderInfo.vertexCount, layout);
-            frame.meshArray[0].SetIndexBufferParams(frame.plyHeaderInfo.indexCount, IndexFormat.UInt32);
-            frame.geoJob.pathCharArray = new NativeArray<byte>(Encoding.UTF8.GetBytes(plyPath), Allocator.TempJob);
-            frame.geoJob.headerInfo = frame.plyHeaderInfo;
-            frame.geoJob.mesh = frame.meshArray[0];
-
+            frame.geoJob.pathCharArray = new NativeArray<byte>(Encoding.UTF8.GetBytes(plyPath), Allocator.Persistent);
+            frame.geoJob.readCmd = new NativeArray<ReadCommand>(1, Allocator.Persistent);
+            frame.geoJob.geoType = frame.sequenceConfiguration.geometryType;
+            frame.geoJob.hasUVs = frame.sequenceConfiguration.hasUVs;
+            frame.geoJob.headerSize = frame.sequenceConfiguration.headerSizes[frame.playbackIndex];
+            frame.geoJob.vertexCount = frame.sequenceConfiguration.verticeCounts[frame.playbackIndex];
+            frame.geoJob.indiceCount = frame.sequenceConfiguration.indiceCounts[frame.playbackIndex];
+            frame.geoJob.maxIndiceCount = frame.sequenceConfiguration.maxIndiceCount;
+            frame.geoJob.vertexBuffer = frame.vertexBufferRaw;
+            frame.geoJob.indiceBuffer = frame.indiceBufferRaw;
+            frame.geoJob.indiceIntermediateBuffer = frame.indiceIntermediateBuffer;
             frame.geoJobHandle = frame.geoJob.Schedule(frame.geoJobHandle);
-
-            return frame;
-
         }
 
         /// <summary>
-        /// Schedules a job which loads a .dds DXT1 file from disk into memory
+        /// Schedules a job which loads a texture file from disk into memory
         /// </summary>
         /// <param name="frame">The frame data into which the texture will be loaded. The textureBufferRaw needs to be intialized already </param>
         /// <param name="texturePath"></param>
         /// <returns></returns>
-        public Frame ScheduleTextureJob(Frame frame, string texturePath)
+        public void ScheduleTextureReadJob(Frame frame, string texturePath)
         {
-            frame.textureJob = new ReadTextureJob();
-            frame.ddsHeaderInfo = ReadDDSHeader(texturePath);
-
-            if (!frame.ddsHeaderInfo.error && frame.ddsHeaderInfo.size > 0)
+            if (texturePath == "")
             {
-                if (frame.textureBufferRaw.Length != frame.ddsHeaderInfo.size)
-                {
-                    frame.textureJobHandle.Complete();
-                    frame.textureBufferRaw.Dispose();
-                    frame.textureBufferRaw = new NativeArray<byte>(frame.ddsHeaderInfo.size, Allocator.Persistent);
-                }
-
-                frame.textureJob.textureRawData = frame.textureBufferRaw;
-                frame.textureJob.texturePathCharArray = new NativeArray<byte>(Encoding.UTF8.GetBytes(texturePath), Allocator.TempJob);
-
-                frame.textureJobHandle = frame.textureJob.Schedule(frame.textureJobHandle);
+                Debug.LogError("Texture Path to read is empty!");
+                return;
             }
 
-            return frame;
+            frame.textureJob.readCmd = new NativeArray<ReadCommand>(1, Allocator.Persistent);
+            frame.textureJob.format = GetDeviceDependentTextureFormat();
+            frame.textureJob.textureSize = GetDeviceDependentTextureSize(frame.sequenceConfiguration);
+            frame.textureJob.textureRawData = frame.textureBufferRaw;
+            frame.textureJob.texturePathCharArray = new NativeArray<byte>(Encoding.UTF8.GetBytes(texturePath), Allocator.Persistent);
+            frame.textureJobHandle = frame.textureJob.Schedule(frame.textureJobHandle);
         }
 
-
-        /// <summary>
-        /// Reads the header of a .ply file on disk into the HeaderPLY struct. Also checks if the file is in the correct format
-        /// </summary>
-        /// <param name="path">Absolute path to the .ply file on disk</param>
-        /// <returns>Returns the header information. Check the error attribute to see if the file has been loaded correctly</returns>
-        private HeaderPLY ReadPLYHeader(string path)
-        {
-            HeaderPLY info = new HeaderPLY();
-
-            BinaryReader reader = new BinaryReader(new FileStream(path, FileMode.Open));
-
-            string line = "";
-
-            while (!line.Contains("format"))
-                line = ReadPLYHeaderLine(reader);
-
-            if (!line.Contains("binary"))
-            {
-                Debug.LogError("PLY File contains ascíi data, which is not supported. " +
-                    "Please use the included Converter Tool to convert your files into the right format");
-                info.error = true;
-                return info;
-            }
-
-            if (!line.Contains("little_endian"))
-            {
-                Debug.LogError("PLY File contains data in big-endian format, which is not supported. " +
-                    "Please use the included Converter Tool to convert your files into the right format");
-                info.error = true;
-                return info;
-            }
-
-            while (!line.Contains("element vertex"))
-                line = ReadPLYHeaderLine(reader);
-
-            string[] lineElements = line.Split(' ');
-
-            info.vertexCount = Int32.Parse(lineElements[2]);
-            info.indexCount = info.vertexCount;
-
-            line = ReadPLYHeaderLine(reader);
-
-            if (line.Contains("double"))
-            {
-                Debug.LogError("PLY File contains 64-bit floats (Double) numbers, which is not supported. " +
-                    "Please use the included Converter Tool to convert your files into the right format");
-                info.error = true;
-                return info;
-            }
-
-            while (!line.Contains("float z"))
-                line = ReadPLYHeaderLine(reader);
-
-            line = ReadPLYHeaderLine(reader);
-
-
-            if (line.Contains("uchar red"))
-            {
-                info.meshType = MeshTopology.Points;
-
-                while (!line.Contains("blue"))
-                    line = ReadPLYHeaderLine(reader);
-
-                line = ReadPLYHeaderLine(reader);
-
-                if (!line.Contains("alpha"))
-                {
-                    Debug.LogError("PLY File doesn't contain an alpha channel, which is required. " +
-                        "Please use the included Converter Tool to convert your files into the right format");
-                    info.error = true;
-                    return info;
-                }
-            }
-
-            else
-            {
-                if(line.Contains("property float s"))
-                {
-                    info.hasUVs = true;
-                    string u = line;
-                    string v = ReadPLYHeaderLine(reader);
-                    line = ReadPLYHeaderLine(reader);
-                }
-
-                else
-                {
-                    info.hasUVs = false;
-                }
-
-                if (line.Contains("element face"))
-                {
-                    info.meshType = MeshTopology.Triangles;
-                    string[] elementFaceSplit = line.Split(' ');
-                    info.indexCount = Int32.Parse(elementFaceSplit[2]) * 3;
-                }
-
-                else
-                {
-                    Debug.LogError("PLY File has invalid format. " +
-                        "Please use the included Converter Tool to convert your files into the right format");
-                    info.error = true;
-                    return info;
-                }
-            }
-
-            while (!line.Contains("end_header"))
-            {
-                line = ReadPLYHeaderLine(reader);
-            }
-
-            info.byteCount = (int)reader.BaseStream.Position;
-
-            reader.Close();
-            reader.Dispose();
-
-            return info;
-        }
-
-        public string ReadPLYHeaderLine(BinaryReader reader)
-        {
-            char currentChar = 'a';
-            string s = "";
-
-            while (currentChar != '\r' && currentChar != '\n')
-            {
-                currentChar = reader.ReadChar();
-                s += currentChar;
-            }
-
-            return s;
-        }
-
-        /// <summary>
-        /// Reads the header of a .dds file on disk. Also checks if the file has the correct format
-        /// </summary>
-        /// <param name="path">The absolute path to the .dds file on disk</param>
-        /// <returns>Returns header information. Check the error attribute to see if the file is in the correct format</returns>
-        public HeaderDDS ReadDDSHeader(string path)
-        {
-            HeaderDDS headerDDS = new HeaderDDS();
-
-            BinaryReader ddsReader = new BinaryReader(new FileStream(path, FileMode.Open));
-
-            byte[] headerBytes = ddsReader.ReadBytes(128);
-
-            byte ddsSizeCheck = headerBytes[4];
-            if (ddsSizeCheck != 124)
-            {
-                Debug.LogError("Invalid DDS DXTn texture. Unable to read");
-                headerDDS.error = true;
-                ddsReader.Dispose();
-                return headerDDS;
-            }
-
-            headerDDS.height = headerBytes[13] * 256 + headerBytes[12];
-            headerDDS.width = headerBytes[17] * 256 + headerBytes[16];
-            headerDDS.size = (int)ddsReader.BaseStream.Length - 128;
-
-            ddsReader.Dispose();
-            return headerDDS;
-        }
 
         /// <summary>
         /// This function ensures that all memory resources are unlocated
         /// and all jobs are finished, so that no memory leaks occur.
         /// </summary>
-        public void DisposeAllFrames(bool stopBuffering, bool forceWorkerCompletion, bool disposeTexture)
+        public void DisposeFrameBuffer(bool stopBuffering)
         {
             buffering = !stopBuffering;
 
-            if(frameBuffer != null)
+            if (frameBuffer != null)
             {
                 for (int i = 0; i < frameBuffer.Length; i++)
                 {
-                    DisposeFrame(i, forceWorkerCompletion, disposeTexture);
+                    frameBuffer[i].geoJobHandle.Complete();
+                    frameBuffer[i].vertexBufferRaw.Dispose();
+                    frameBuffer[i].indiceBufferRaw.Dispose();
+                    frameBuffer[i].indiceIntermediateBuffer.Dispose();
+
+                    frameBuffer[i].textureJobHandle.Complete();
+                    frameBuffer[i].textureBufferRaw.Dispose();
                 }
             }
 
-        }
-
-        public bool DisposeFrame(int frameBufferIndex, bool forceWorkerCompletion, bool disposeTexture)
-        {
-            if (frameBuffer != null)
-            {
-                if (forceWorkerCompletion)
-                {
-                    frameBuffer[frameBufferIndex].geoJobHandle.Complete();
-                    frameBuffer[frameBufferIndex].textureJobHandle.Complete();
-                }
-
-                if (frameBuffer[frameBufferIndex].geoJobHandle.IsCompleted && frameBuffer[frameBufferIndex].textureJobHandle.IsCompleted)
-                {
-                    if (!frameBuffer[frameBufferIndex].isDisposed)
-                    {
-                        if (frameBuffer[frameBufferIndex].meshArray.Length > 0)
-                            frameBuffer[frameBufferIndex].meshArray.Dispose();
-
-                        frameBuffer[frameBufferIndex].isDisposed = true;
-                    }
-
-                    if (disposeTexture)
-                    {
-                        if (frameBuffer[frameBufferIndex].textureBufferRaw.Length > 0)
-                            frameBuffer[frameBufferIndex].textureBufferRaw.Dispose();
-                    }
-
-                    return true;
-                }
-
-                return false;
-            }
-
-            return false;
+            frameBuffer = null;
         }
     }
 
     public struct ReadGeometryJob : IJob
     {
-        public Mesh.MeshData mesh;
+        public NativeArray<byte> vertexBuffer;
+        public NativeArray<byte> indiceIntermediateBuffer;
+        public NativeArray<byte> indiceBuffer;
+        public bool hasUVs;
         public bool readFinished;
-        public HeaderPLY headerInfo;
+        public int headerSize;
+        public int vertexCount;
+        public int indiceCount;
+        public int maxIndiceCount;
+        public GeometryType geoType;
 
         [DeallocateOnJobCompletion]
         public NativeArray<byte> pathCharArray;
+
+        [DeallocateOnJobCompletion]
+        public NativeArray<ReadCommand> readCmd;
 
         public void Execute()
         {
@@ -693,76 +601,77 @@ namespace BuildingVolumes.Streaming
             pathCharArray.CopyTo(pathCharBuffer);
             string path = Encoding.UTF8.GetString(pathCharBuffer);
 
-            //We read all bytes into a buffer at once, much quicker than doing it in many shorter reads.
-            //This buffer only contains the raw mesh data without the header
-            BinaryReader reader = new BinaryReader(new FileStream(path, FileMode.Open));
-            reader.BaseStream.Position = headerInfo.byteCount;
-            byte[] byteBuffer = reader.ReadBytes((int)(reader.BaseStream.Length - headerInfo.byteCount));
-            reader.Close();
-            reader.Dispose();
+            ReadCommand readVerticesCmd;
+            ReadHandle readVerticesHandle;
+            readVerticesCmd.Offset = headerSize;
+            unsafe { readVerticesCmd.Buffer = NativeArrayUnsafeUtility.GetUnsafePtr<byte>(vertexBuffer); }
 
-            if (headerInfo.meshType == MeshTopology.Points)
+            if (geoType == GeometryType.point)
+                readVerticesCmd.Size = vertexCount * 4 * 4;
+            else
+                readVerticesCmd.Size = hasUVs ? vertexCount * 5 * 4 : vertexCount * 3 * 4;
+
+            readCmd[0] = readVerticesCmd;
+
+            unsafe { readVerticesHandle = AsyncReadManager.Read(path, (ReadCommand*)readCmd.GetUnsafePtr(), 1); }
+
+            if (readVerticesHandle.IsValid())
             {
-                int[] indices = new int[headerInfo.vertexCount];
-
-                for (int i = 0; i < headerInfo.vertexCount; i++)
+                while (readVerticesHandle.Status == ReadStatus.InProgress)
                 {
-                    indices[i] = i; //If the pointcloud "mesh" doesn't have indices, Unity won't display it, so we make them up here
+                    Thread.Sleep(1);
                 }
-
-                mesh.GetVertexData<byte>().CopyFrom(byteBuffer);
-                mesh.GetIndexData<int>().CopyFrom(indices);
-
-                mesh.subMeshCount = 1;
-                mesh.SetSubMesh(0, new SubMeshDescriptor(0, indices.Length, MeshTopology.Points));
             }
 
-            else if (headerInfo.meshType == MeshTopology.Triangles)
+            readVerticesHandle.Dispose();
+
+            if (geoType != GeometryType.point)
             {
-                int vertexBufferSize = 0;
-
-                if(headerInfo.hasUVs)
-                    vertexBufferSize = headerInfo.vertexCount * 5;
-                else
-                    vertexBufferSize = headerInfo.vertexCount * 3;
-
-
-                float[] vertexBuffer = new float[vertexBufferSize];
-                int[] indicesRaw = new int[headerInfo.indexCount];
-
-                Buffer.BlockCopy(byteBuffer, 0, vertexBuffer, 0, vertexBufferSize * sizeof(float));
-
-                int facePositionInBuffer = vertexBufferSize * sizeof(float);
-                int sizeOfIndexLine = sizeof(byte) + sizeof(int) * 3;
-
                 //Reading the index is a bit more tricky because each index line contains the number of indices in that line, which we dont want to include
-                for (int i = 0; i < headerInfo.indexCount / 3; i++)
+                //So we first read it into a temporary array, and then copy only the indices
+
+                ReadCommand readIndicesCmd;
+                ReadHandle readIndicesHandle;
+                readIndicesCmd.Offset = headerSize + readVerticesCmd.Size;
+                readIndicesCmd.Size = (indiceCount * 4) + indiceCount;
+                unsafe { readIndicesCmd.Buffer = NativeArrayUnsafeUtility.GetUnsafePtr<byte>(indiceIntermediateBuffer); }
+                readCmd[0] = readIndicesCmd;
+                unsafe { readIndicesHandle = AsyncReadManager.Read(path, (ReadCommand*)readCmd.GetUnsafePtr(), 1); }
+
+                if (readIndicesHandle.IsValid())
                 {
-                    Buffer.BlockCopy(byteBuffer, facePositionInBuffer + sizeOfIndexLine * i + sizeof(byte), indicesRaw, i * 3 * sizeof(int), 3 * sizeof(int));
+                    while (readIndicesHandle.Status == ReadStatus.InProgress)
+                    {
+                        Thread.Sleep(1);
+                    }
                 }
 
-                NativeArray<float> verts = new NativeArray<float>(vertexBuffer, Allocator.Temp);
-                NativeArray<int> indices = new NativeArray<int>(indicesRaw, Allocator.Temp);
+                readIndicesHandle.Dispose();
 
-                mesh.GetVertexData<float>().CopyFrom(verts);
-                mesh.GetIndexData<int>().CopyFrom(indices);
+                int indiceTriplet = 3 * 4;
 
-                mesh.subMeshCount = 1;
-                mesh.SetSubMesh(0, new SubMeshDescriptor(0, indices.Length, MeshTopology.Triangles));
+                for (int i = 0; i < indiceCount / 3; i++)
+                {
+                    NativeArray<byte>.Copy(indiceIntermediateBuffer, (i * (indiceTriplet + 1)) + 1, indiceBuffer, i * indiceTriplet, indiceTriplet);
+                }
             }
 
             readFinished = true;
-
         }
     }
 
     public struct ReadTextureJob : IJob
     {
         public NativeArray<byte> textureRawData;
+        public int textureSize;
         public bool readFinished;
+        public SequenceConfiguration.TextureFormat format;
 
         [DeallocateOnJobCompletion]
         public NativeArray<byte> texturePathCharArray;
+
+        [DeallocateOnJobCompletion]
+        public NativeArray<ReadCommand> readCmd;
 
         public void Execute()
         {
@@ -773,14 +682,32 @@ namespace BuildingVolumes.Streaming
             texturePathCharArray.CopyTo(texturePathCharBuffer);
             texturePath = Encoding.UTF8.GetString(texturePathCharBuffer);
 
-            int DDS_HEADER_SIZE = 128;
+            int headerSize = 0;
+            if (format == SequenceConfiguration.TextureFormat.DDS)
+                headerSize = 128;
+            if (format == SequenceConfiguration.TextureFormat.ASTC)
+                headerSize = 16;
 
-            BinaryReader textureReader = new BinaryReader(new FileStream(texturePath, FileMode.Open));
+            ReadCommand readTextureCmd;
+            ReadHandle readTextureHandle;
+            readTextureCmd.Offset = headerSize;
+            readTextureCmd.Size = textureSize;
+            unsafe { readTextureCmd.Buffer = NativeArrayUnsafeUtility.GetUnsafePtr<byte>(textureRawData); }
 
-            //As GPUs can access .DDS data directly, we can simply take the binary blob and upload it to the GPU
-            textureReader.BaseStream.Position = DDS_HEADER_SIZE; //Skip the DDS header
-            textureRawData.CopyFrom(textureReader.ReadBytes((int)textureReader.BaseStream.Length - DDS_HEADER_SIZE));
-            textureReader.Close();
+
+            readCmd[0] = readTextureCmd;
+
+            unsafe { readTextureHandle = AsyncReadManager.Read(texturePath, (ReadCommand*)readCmd.GetUnsafePtr(), 1); }
+
+            if (readTextureHandle.IsValid())
+            {
+                while (readTextureHandle.Status == ReadStatus.InProgress)
+                {
+                    Thread.Sleep(1);
+                }
+            }
+
+            readTextureHandle.Dispose();
 
             readFinished = true;
         }

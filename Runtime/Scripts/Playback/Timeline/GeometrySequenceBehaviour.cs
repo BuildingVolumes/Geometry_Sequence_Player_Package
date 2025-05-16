@@ -6,7 +6,7 @@ using System.Runtime.CompilerServices;
 using UnityEngine;
 using UnityEngine.Playables;
 
-namespace BuildingVolumes.Streaming
+namespace BuildingVolumes.Player
 {
     public class GeometrySequenceBehaviour : PlayableBehaviour
     {
@@ -21,6 +21,9 @@ namespace BuildingVolumes.Streaming
         {
             GeometrySequenceStream stream = playerData as GeometrySequenceStream;
 
+            if (stream == null)
+                return;
+
             if (!Application.isPlaying)
                 return;
 
@@ -34,11 +37,11 @@ namespace BuildingVolumes.Streaming
 
                 loadNewSequence = false;
             }
-            
+
             double currentTime = playable.GetTime<Playable>();
 
-            if(streamIsReady)
-                stream.UpdateFrame((float)currentTime * 1000);
+            if (streamIsReady)
+                stream.UpdateFrame();
         }
 
         //Playback start

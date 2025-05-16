@@ -1,0 +1,18 @@
+{
+    "name": "buildingvolumes.geometry_sequence_player",
+    "rootNamespace": "",
+    "references": [
+        "Unity.Timeline",
+        "Unity.TextMeshPro",
+        "Unity.PolySpatial"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": true,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

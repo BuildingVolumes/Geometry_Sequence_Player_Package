@@ -4,7 +4,7 @@ using UnityEngine;
 using UnityEngine.Playables;
 using UnityEngine.Timeline;
 
-namespace BuildingVolumes.Streaming
+namespace BuildingVolumes.Player
 {
     [CustomEditor(typeof(GeometrySequenceClip))]
     [CanEditMultipleObjects]
@@ -15,7 +15,7 @@ namespace BuildingVolumes.Streaming
         SerializedProperty relativePath;
         SerializedProperty targetPlaybackFPS;
 
-        GeometrySequenceStream.PathType enumforDisplay; 
+        GeometrySequenceStream.PathType enumforDisplay;
 
         void OnEnable()
         {
@@ -67,7 +67,7 @@ namespace BuildingVolumes.Streaming
                             }
 
                             clip.ShowThumbnail(path);
-                            
+
                         }
 
                         else
@@ -89,7 +89,7 @@ namespace BuildingVolumes.Streaming
             GUILayout.EndHorizontal();
 
 #if !UNITY_ANDROID
-            if(pathRelation.enumValueIndex != (int)GeometrySequenceStream.PathType.RelativeToStreamingAssets && relativePath.stringValue.Length > 1)
+            if (pathRelation.enumValueIndex != (int)GeometrySequenceStream.PathType.RelativeToStreamingAssets && relativePath.stringValue.Length > 1)
                 EditorGUILayout.HelpBox("Files are not placed in the StreamingAsset folder. The playback will work on your PC, but likely not if you build/export the project to other devices.", MessageType.Warning);
 
 #endif
