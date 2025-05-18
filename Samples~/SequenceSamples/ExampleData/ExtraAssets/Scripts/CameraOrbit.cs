@@ -7,6 +7,7 @@
 using System;
 using UnityEditor.Experimental.GraphView;
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 public class CameraOrbit : MonoBehaviour
 {
@@ -37,27 +38,55 @@ public class CameraOrbit : MonoBehaviour
 
     void LateUpdate()
     {
+        Vector2 mousePosition = Vector2.zero;
+        float mouseScrollDelta = 0;
+        float mouseXDelta = 0;
+        float mouseYDelta = 0;
+        bool mouseLeftButton = false;
+        bool mouseRightButton = false;
+
+#if ENABLE_INPUT_SYSTEM
+        mousePosition = Mouse.current.position.value;
+        mouseScrollDelta = Mouse.current.scroll.value.y;
+        mouseXDelta = Mouse.current.delta.x.value / 10;
+        mouseYDelta = Mouse.current.delta.y.value / 10;
+        mouseLeftButton = Mouse.current.leftButton.value > 0.5 ? true: false;
+        mouseRightButton = Mouse.current.rightButton.isPressed;
+#endif
+
+#if ENABLE_LEGACY_INPUT_MANAGER
+        mousePosition = Input.mousePosition;
+        mouseScrollDelta = Input.GetAxis("Mouse ScrollWheel");
+        mouseXDelta = Input.GetAxis("Mouse X");
+        mouseYDelta = Input.GetAxis("Mouse Y");
+        mouseLeftButton = Input.GetMouseButton(0);
+        mouseRightButton = Input.GetMouseButton(1);
+#endif
+
         if (distance < 0) distance = 0;
-        distance -= Input.GetAxis("Mouse ScrollWheel") * 2;
-        if (target && (Input.GetMouseButton(0) || Input.GetMouseButton(1)))
+        distance -= mouseScrollDelta * 2;
+
+
+        if (target && (mouseLeftButton || mouseRightButton))
         {
             autoRotate = false;
             timeSinceInteraction = Time.time;
 
-            var pos = Input.mousePosition;
             var dpiScale = 1f;
             if (Screen.dpi < 1) dpiScale = 1;
             if (Screen.dpi < 200) dpiScale = 1;
             else dpiScale = Screen.dpi / 200f;
 
-            if (pos.x < 380 * dpiScale && Screen.height - pos.y < 250 * dpiScale) return;
+            if(mousePosition.x < 0 || mousePosition.x > Screen.width || mousePosition.y < 0 || mousePosition.y > Screen.height)
+                return;
+
 
             // comment out these two lines if you don't want to hide mouse curser or you have a UI button 
             Cursor.visible = false;
             Cursor.lockState = CursorLockMode.Locked;
 
-            x += Input.GetAxis("Mouse X") * xSpeed * 0.02f;
-            y -= Input.GetAxis("Mouse Y") * ySpeed * 0.02f;
+            x += mouseXDelta * xSpeed * 0.02f;
+            y -= mouseYDelta * ySpeed * 0.02f;
         }
 
         else
