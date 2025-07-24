@@ -13,7 +13,7 @@ MonoBehaviour:
   m_Name: GeometrySequenceClip
   m_EditorClassIdentifier: 
   stream: {fileID: 0}
-  relativePath: Samples\Geometry Sequence Player\1.1.0\Sequence Samples\ExampleData\TexturedMesh_Sequence_Sample
+  relativePath: Samples\Geometry Sequence Player\1.1.1\Sequence Samples\ExampleData\TexturedMesh_Sequence_Sample
   pathRelation: 1
   targetPlaybackFPS: 30
 --- !u!114 &-6477893712793787118
