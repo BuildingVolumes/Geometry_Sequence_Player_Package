@@ -13,6 +13,12 @@ weight: 420
 toc: true
 ---
 
+### Version 1.1.1
+
+Fixed Issues:
+
+- Removed unnessesary, build breaking using reference from samples script  
+
 ### Version 1.1.0
 
 Added features:
