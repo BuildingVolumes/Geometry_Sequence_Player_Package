@@ -6,7 +6,9 @@
 
 using System;
 using UnityEngine;
+#if ENABLE_INPUT_SYSTEM
 using UnityEngine.InputSystem;
+#endif
 
 public class CameraOrbit : MonoBehaviour
 {
