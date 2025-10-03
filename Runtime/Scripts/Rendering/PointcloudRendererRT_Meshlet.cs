@@ -1,30 +1,35 @@
+using UnityEngine;
+using Unity.Collections;
 using BuildingVolumes.Player;
 using System.Collections;
 using System.Collections.Generic;
-using Unity.Collections;
-using UnityEngine;
-using UnityEngine.Rendering;
-using static UnityEditor.Experimental.GraphView.GraphView;
+
+//This is a special version of the pointcloud renderer,
+//that should only really be used for Unity Polyspatial on the Apple Vision Pro
+//It builds the mesh much more slowly than the standard variant of the shader
+//and distributes the load over multiple meshes and frames
 
 namespace BuildingVolumes.Player
 {
-
-  public class PointcloudRendererRT : MonoBehaviour, IPointCloudRenderer
+  public class PointcloudRendererRT_Meshlet : MonoBehaviour, IPointCloudRenderer
   {
     ComputeShader computeShaderRT;
     RenderTexture rtPositions;
     RenderTexture rtColors;
     int rtResolution;
+    float currentPointSize = 0;
+    float currentPointEmission = 1;
+    int meshletQuadCount = 2000;
+
 
     GraphicsBuffer pointSourceBuffer;
 
-    GameObject pcObject;
-    MeshFilter pcMeshFilter;
-    MeshRenderer pcMeshRenderer;
+    GameObject pcRenderParent;
+    List<GameObject> meshObjects;
+    List<MeshFilter> meshFilters;
+    List<MeshRenderer> meshRenderers;
 
-    Material currentPointcloudMaterial;
-    float currentPointSize = 0;
-    float currentPointEmission = 1;
+    GameObject meshletPrefab;
 
     bool ready = true;
 
@@ -37,6 +42,7 @@ namespace BuildingVolumes.Player
 
     //Vertex/Fragment shader property IDs
     static readonly int rtResolutionID = Shader.PropertyToID("_RTResolution");
+    static readonly int rtVertexOffsetID = Shader.PropertyToID("_VertexIDOffset");
     static readonly int rtPositionSourceID = Shader.PropertyToID("_PositionSourceRT");
     static readonly int rtColorSourceID = Shader.PropertyToID("_ColorSourceRT");
     static readonly int pointScaleID = Shader.PropertyToID("_PointScale");
@@ -48,14 +54,21 @@ namespace BuildingVolumes.Player
     /// <param name="maxPointCount">The maximum number of points that could appear in any frame of the sequence</param>
     /// <param name="meshFilter">The meshfilter where the point geometry data will be rendered into</param>
     /// <param name="meshRenderer">The meshrenderer used for rendering the points. Will be auto-configured</param>
-    public void Setup(SequenceConfiguration configuration, Transform parent, float pointSize, float pointEmission, Material pointMaterial)
+    public void Setup(SequenceConfiguration configuration, Transform parent, float pointSize, float pointEmission, Material mat)
     {
       Dispose();
 
+      pcRenderParent = CreateStreamObject("PointcloudRenderer", parent);
+
       ready = true;
+      currentPointSize = pointSize;
+      currentPointEmission = pointEmission;
 
       if (computeShaderRT == null)
-        computeShaderRT = Resources.Load("ShaderGraph/Pointcloud_Shadergraph", typeof(ComputeShader)) as ComputeShader;
+        computeShaderRT = Resources.Load("PolySpatial/Pointcloud_Polyspatial", typeof(ComputeShader)) as ComputeShader;
+
+      if (meshletPrefab == null)
+        meshletPrefab = Resources.Load("Meshlet") as GameObject;
 
       //Calculate a square shaped texture in which all point data will fit
       rtResolution = Mathf.CeilToInt(Mathf.Sqrt(configuration.maxVertexCount));
@@ -82,9 +95,7 @@ namespace BuildingVolumes.Player
       computeShaderRT.SetTexture(0, rtColorsID, rtColors);
 
       //Create the pointcloud mesh with n points
-      pcObject = MeshCreation(configuration);
-
-      SetPointcloudMaterial(currentPointcloudMaterial, pointSize, pointEmission);
+      StartCoroutine(MeshCreation(configuration, pointSize, pointEmission, mat));
     }
 
     /// <summary>
@@ -93,77 +104,71 @@ namespace BuildingVolumes.Player
     /// and also distribute the mesh over multiple Meshfilters.
     /// Otherwise, we risk fatal crashes where the AVP needs to restart
     /// </summary>
-    GameObject MeshCreation(SequenceConfiguration config)
+    IEnumerator MeshCreation(SequenceConfiguration config, float pointSize, float pointEmission, Material mat)
     {
-      //Setup the rendering object
-      GameObject pcObject = CreateStreamObject("PointcloudRenderer", this.transform);
+      //Wait a few seconds when the app has just started, otherwise we risk crashing polyspatial
+      if (Time.time < 3f && Application.isPlaying)
+        yield return new WaitForSeconds(3f - Time.time);
 
-      pcMeshFilter = pcObject.GetComponent<MeshFilter>();
-      if (pcMeshFilter == null)
-        pcMeshFilter = pcObject.AddComponent<MeshFilter>();
+      int meshPartCount = Mathf.CeilToInt((float)config.maxVertexCount / meshletQuadCount);
 
-      pcMeshRenderer = pcObject.GetComponent<MeshRenderer>();
-      if (pcMeshRenderer == null)
-        pcMeshRenderer = pcObject.AddComponent<MeshRenderer>();
+      meshObjects = new List<GameObject>();
+      meshFilters = new List<MeshFilter>();
+      meshRenderers = new List<MeshRenderer>();
 
-      pcMeshFilter.hideFlags = HideFlags.HideAndDontSave;
-      pcMeshRenderer.hideFlags = HideFlags.HideAndDontSave;
-
-
-      //Create a mesh that we use to render the pointcloud
-      //The mesh consists out of simple quads, which we define here
-
-      int quadCount = config.maxVertexCount;
-
-      Vector3 vertice1 = new Vector3(-0.5f, 0.5f, 0f);
-      Vector3 vertice2 = new Vector3(0.5f, 0.5f, 0f);
-      Vector3 vertice3 = new Vector3(0.5f, -0.5f, 0f);
-      Vector3 vertice4 = new Vector3(-0.5f, -0.5f, 0f);
-
-      Vector2 uv1 = new Vector2(0, 1);
-      Vector2 uv2 = new Vector2(1, 1);
-      Vector2 uv3 = new Vector2(1, 0);
-      Vector2 uv4 = new Vector2(0, 0);
-
-      Mesh mesh = new Mesh();
-
-      Vector3[] vertices = new Vector3[quadCount * 4];
-      Vector2[] uvs = new Vector2[quadCount * 4];
-      int[] indices = new int[quadCount * 6];
-
-      for (int i = 0; i < quadCount; i++)
+      for (int j = 0; j < meshPartCount; j++)
       {
-        vertices[i * 4 + 0] = vertice1;
-        vertices[i * 4 + 1] = vertice2;
-        vertices[i * 4 + 2] = vertice3;
-        vertices[i * 4 + 3] = vertice4;
 
-        uvs[i * 4 + 0] = uv1;
-        uvs[i * 4 + 1] = uv2;
-        uvs[i * 4 + 2] = uv3;
-        uvs[i * 4 + 3] = uv4;
+        GameObject newMeshlet = Instantiate(meshletPrefab, pcRenderParent.transform);
 
-        indices[i * 6 + 0] = i * 4 + 0;
-        indices[i * 6 + 1] = i * 4 + 1;
-        indices[i * 6 + 2] = i * 4 + 3;
-        indices[i * 6 + 3] = i * 4 + 1;
-        indices[i * 6 + 4] = i * 4 + 2;
-        indices[i * 6 + 5] = i * 4 + 3;
+        if (Application.isPlaying)
+          yield return StartCoroutine(DeltaTimeStabilizer("Meshlet added"));
+
+        MeshRenderer meshRenderer = newMeshlet.GetComponent<MeshRenderer>();
+        MeshFilter meshFilter = newMeshlet.GetComponent<MeshFilter>();
+        meshFilters.Add(meshFilter);
+        meshRenderers.Add(meshRenderer);
+        meshObjects.Add(newMeshlet);
+
+        meshFilter.sharedMesh.bounds = config.GetBounds();
+        SetMaterial(meshRenderer, mat, j, pointSize, pointEmission);
+
+        if (Application.isPlaying)
+          yield return StartCoroutine(DeltaTimeStabilizer("Meshlet added"));
       }
 
-      //Important, as we often deal with more than 16000 triangles
-      mesh.indexFormat = IndexFormat.UInt32;
+      ready = true;
 
-      mesh.vertices = vertices;
-      mesh.triangles = indices;
-      mesh.SetUVs(0, uvs);
-      mesh.bounds = config.GetBounds();
-      pcMeshFilter.sharedMesh = mesh;
-
-      return pcObject;
     }
 
+    IEnumerator DeltaTimeStabilizer(string action)
+    {
+      int deltaTimeStabilizedCounter = 0;
+      float timeout = 3f;
+      float timeAtBeginning = Time.time;
 
+      int framesToStabilize = 0;
+
+      if (Application.isPlaying)
+      {
+        yield return null;
+
+        while (deltaTimeStabilizedCounter < 10)
+        {
+          if (Time.deltaTime < 0.033f)
+            deltaTimeStabilizedCounter++;
+
+          if (Time.time - timeAtBeginning > timeout)
+            break;
+
+          framesToStabilize++;
+          yield return null;
+        }
+
+      }
+
+
+    }
     /// <summary>
     /// Update the pointcloud data in the sequence with a new pointcloud frame.
     /// </summary>
@@ -181,9 +186,15 @@ namespace BuildingVolumes.Player
       computeShaderRT.SetInt(pointCountID, frame.geoJob.vertexCount);
       int groupSize = Mathf.CeilToInt(rtPositions.width / 32f);
       computeShaderRT.Dispatch(0, groupSize, groupSize, 1);
+
+#if UNITY_VISIONOS
+        Unity.PolySpatial.PolySpatialObjectUtils.MarkDirty(rtPositions);
+        Unity.PolySpatial.PolySpatialObjectUtils.MarkDirty(rtColors);
+#endif
+
     }
 
-
+   
     public void SetPointcloudMaterial(Material mat)
     {
       SetPointcloudMaterial(mat, currentPointSize, currentPointEmission);
@@ -191,15 +202,36 @@ namespace BuildingVolumes.Player
 
     public void SetPointcloudMaterial(Material mat, float pointSize, float pointEmission)
     {
+      StartCoroutine(SetMaterialsOverTime(mat, pointSize, pointEmission));
+    }
+
+    /// <summary>
+    /// On Polyspatial, materials need to be set slowly over time, so that RealityKit can catch up with the new materials
+    /// </summary>
+    /// <param name="mat"></param>
+    IEnumerator SetMaterialsOverTime(Material mat, float pointSize, float pointEmission)
+    {
+      if (meshRenderers != null)
+      {
+        for (int i = 0; i < meshRenderers.Count; i++)
+        {
+          if (meshRenderers[i] != null)
+          {
+            SetMaterial(meshRenderers[i], mat, i, pointSize, pointEmission);
+            yield return null;
+          }
+        }
+      }
+    }
+
+    void SetMaterial(MeshRenderer renderer, Material mat, int meshletIndex, float pointSize, float pointEmission)
+    {
       if (!mat)
         mat = LoadDefaultMaterial();
 
-      currentPointcloudMaterial = mat;
-      currentPointSize = pointSize;
-      currentPointEmission = pointEmission;
-
       Material newMat = new Material(mat);
       newMat.SetFloat(rtResolutionID, rtResolution);
+      newMat.SetFloat(rtVertexOffsetID, meshletIndex * meshletQuadCount * 4);
       newMat.SetTexture(rtPositionSourceID, rtPositions);
       newMat.SetTexture(rtColorSourceID, rtColors);
 
@@ -209,20 +241,24 @@ namespace BuildingVolumes.Player
       if (newMat.HasFloat(pointEmissionID))
         newMat.SetFloat(pointEmissionID, pointEmission);
 
-      if (pcMeshRenderer != null)
-        pcMeshRenderer.sharedMaterial = newMat;
+      if (renderer != null)
+        renderer.sharedMaterial = newMat;
     }
 
     public void Show()
     {
-      if (pcMeshRenderer)
-        pcMeshRenderer.enabled = true;
+      for (int i = 0; i < meshRenderers.Count; i++)
+      {
+        meshRenderers[i].enabled = true;
+      }
     }
 
     public void Hide()
     {
-      if (pcMeshRenderer)
-        pcMeshRenderer.enabled = true;
+      for (int i = 0; i < meshRenderers.Count; i++)
+      {
+        meshRenderers[i].enabled = true;
+      }
     }
 
     GameObject CreateStreamObject(string name, Transform parent)
@@ -238,7 +274,7 @@ namespace BuildingVolumes.Player
 
     public Material LoadDefaultMaterial()
     {
-      Material pointcloudDefaultMaterial = new Material(Resources.Load("ShaderGraph/Pointcloud_Circles_Shadergraph", typeof(Material)) as Material);
+      Material pointcloudDefaultMaterial = new Material(Resources.Load("PolySpatial/Pointcloud_Circles_Polyspatial", typeof(Material)) as Material);
 
       if (pointcloudDefaultMaterial == null)
         UnityEngine.Debug.LogError("Pointcloud Quads material (Polyspatial) could not be loaded!");
@@ -250,18 +286,28 @@ namespace BuildingVolumes.Player
     {
       currentPointSize = size;
 
-      if (pcMeshRenderer)
-        if (pcMeshRenderer.sharedMaterial.HasFloat(pointScaleID))
-          pcMeshRenderer.sharedMaterial.SetFloat(pointScaleID, size);
+      if (meshRenderers != null)
+      {
+        for (int i = 0; i < meshRenderers.Count; i++)
+        {
+          if (meshRenderers[i] != null)
+            meshRenderers[i].sharedMaterial.SetFloat(pointScaleID, size);
+        }
+      }
     }
 
     public void SetPointEmission(float emission)
     {
       currentPointEmission = emission;
 
-      if (pcMeshRenderer)
-        if (pcMeshRenderer.sharedMaterial.HasFloat(pointEmissionID))
-          pcMeshRenderer.sharedMaterial.SetFloat(pointEmissionID, emission);
+      if (meshRenderers != null)
+      {
+        for (int i = 0; i < meshRenderers.Count; i++)
+        {
+          if (meshRenderers[i] != null)
+            meshRenderers[i].sharedMaterial.SetFloat(pointEmissionID, emission);
+        }
+      }
     }
 
     public void Dispose()
@@ -272,8 +318,47 @@ namespace BuildingVolumes.Player
         DestroyImmediate(rtColors);
       if (pointSourceBuffer != null)
         pointSourceBuffer.Dispose();
-      if (pcObject != null)
-        DestroyImmediate(pcObject);
+
+      if (meshFilters != null)
+      {
+        for (int i = 0; i < meshFilters.Count; i++)
+        {
+          if (meshFilters[i] != null)
+          {
+            DestroyImmediate(meshFilters[i]);
+          }
+        }
+
+        meshFilters.Clear();
+        meshFilters = null;
+      }
+
+      if (meshRenderers != null)
+      {
+        for (int i = 0; i < meshRenderers.Count; i++)
+        {
+          if (meshRenderers[i] != null)
+            DestroyImmediate(meshRenderers[i]);
+        }
+
+        meshRenderers.Clear();
+        meshRenderers = null;
+      }
+
+      if (meshObjects != null)
+      {
+        for (int i = 0; i < meshObjects.Count; i++)
+        {
+          if (meshObjects[i] != null)
+            DestroyImmediate(meshObjects[i]);
+        }
+
+        meshObjects.Clear();
+        meshObjects = null;
+      }
+
+      if (pcRenderParent != null)
+        DestroyImmediate(pcRenderParent);
     }
   }
 

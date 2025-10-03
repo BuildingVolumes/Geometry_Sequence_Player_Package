@@ -1,17 +1,16 @@
-Shader "Unlit/GS_UnlitSplatExperimental"
+Shader "Unlit/Pointcloud_Quad"
 {
     Properties
     {
-
+        _Emission("Emission Strength", Range(0.0,10.0)) = 1.0
     }
     SubShader
     {
-        Tags { "RenderType"="Transparent" "Queue"="Transparent" }
+        Tags { "RenderType"="Opaque" "Queue"="AlphaTest" }
         
         LOD 100
 
-        ZWrite Off
-        Blend SrcAlpha OneMinusSrcAlpha
+        Lighting Off
 
         Pass
         {
@@ -42,6 +41,8 @@ Shader "Unlit/GS_UnlitSplatExperimental"
                 UNITY_VERTEX_OUTPUT_STEREO
             };
 
+            float _Emission;
+
             v2f vert (appdata v)
             {
                 v2f o;
@@ -57,20 +58,11 @@ Shader "Unlit/GS_UnlitSplatExperimental"
                 return o;
             }
 
-            float splat(float2 uv) 
-            {
-                float2 center = float2(0, 0);
-	            float d = length(center - uv) - 0.5;
-                float t = clamp(d * 2, 0, 1);
-	            return 1.0 - t;
-            }
-
             fixed4 frag (v2f i) : SV_Target
             {
-                fixed4 col = i.color;                
-                float a = splat(i.texcoord);
-                col.a = a;
-                
+                fixed4 col = i.color;
+                col = col * _Emission;
+
                 // apply fog
                 UNITY_APPLY_FOG(i.fogCoord, col);
                 return col;

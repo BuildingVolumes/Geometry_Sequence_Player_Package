@@ -1,16 +1,17 @@
-Shader "Unlit/GS_UnlitCircle"
+Shader "Unlit/Pointcloud_Splat"
 {
     Properties
     {
-        _Emission("Emission Strength", Range(0.0,10.0)) = 1.0
+
     }
     SubShader
     {
-        Tags { "RenderType"="TransparentCutout" "Queue"="AlphaTest" }
+        Tags { "RenderType"="Transparent" "Queue"="Transparent" }
         
         LOD 100
 
-        Lighting Off
+        ZWrite Off
+        Blend SrcAlpha OneMinusSrcAlpha
 
         Pass
         {
@@ -41,8 +42,6 @@ Shader "Unlit/GS_UnlitCircle"
                 UNITY_VERTEX_OUTPUT_STEREO
             };
 
-            float _Emission;
-
             v2f vert (appdata v)
             {
                 v2f o;
@@ -58,24 +57,26 @@ Shader "Unlit/GS_UnlitCircle"
                 return o;
             }
 
-            float circle(float2 uv) 
+            float splat(float2 uv) 
             {
                 float2 center = float2(0, 0);
 	            float d = length(center - uv) - 0.5;
-                float t = step(0.5, 1.0 - d);
-	            return t;
+                float t = clamp(d * 2, 0, 1);
+	            return 1.0 - t;
             }
 
             fixed4 frag (v2f i) : SV_Target
             {
-                fixed4 col = i.color;
-                col = col * _Emission;
-                float a = circle(i.texcoord);
-                clip(a - 0.5);
+                fixed4 col = i.color;                
+                float a = splat(i.texcoord);
+                col.a = a;
+                
                 // apply fog
                 UNITY_APPLY_FOG(i.fogCoord, col);
                 return col;
-            }        
+            }
+
+        
 
             ENDCG
         }

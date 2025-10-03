@@ -1,4 +1,4 @@
-Shader "Unlit/GS_UnlitQuad"
+Shader "Unlit/Pointcloud_Circle"
 {
     Properties
     {
@@ -6,7 +6,7 @@ Shader "Unlit/GS_UnlitQuad"
     }
     SubShader
     {
-        Tags { "RenderType"="Opaque" "Queue"="AlphaTest" }
+        Tags { "RenderType"="TransparentCutout" "Queue"="AlphaTest" }
         
         LOD 100
 
@@ -58,17 +58,24 @@ Shader "Unlit/GS_UnlitQuad"
                 return o;
             }
 
+            float circle(float2 uv) 
+            {
+                float2 center = float2(0, 0);
+	            float d = length(center - uv) - 0.5;
+                float t = step(0.5, 1.0 - d);
+	            return t;
+            }
+
             fixed4 frag (v2f i) : SV_Target
             {
                 fixed4 col = i.color;
                 col = col * _Emission;
-
+                float a = circle(i.texcoord);
+                clip(a - 0.5);
                 // apply fog
                 UNITY_APPLY_FOG(i.fogCoord, col);
                 return col;
-            }
-
-        
+            }        
 
             ENDCG
         }
