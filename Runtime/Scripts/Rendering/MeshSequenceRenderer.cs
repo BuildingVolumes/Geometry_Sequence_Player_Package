@@ -198,7 +198,13 @@ namespace BuildingVolumes.Player
     void LoadDefaultMaterials()
     {
       if (defaultMeshMaterial == null)
+      {
+#if (!SHADERGRAPH_AVAILABLE)
+        defaultMeshMaterial = Resources.Load("Legacy/Mesh_Unlit_Legacy", typeof(Material)) as Material;
+#else
         defaultMeshMaterial = Resources.Load("ShaderGraph/Mesh_Unlit_ShaderGraph", typeof(Material)) as Material;
+#endif
+      }
     }
 
     public void Dispose()

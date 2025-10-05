@@ -39,7 +39,7 @@ namespace BuildingVolumes.Player
     public List<string> customMaterialSlots;
 
     //Pointcloud rendering options
-    public PointcloudRenderPath pointRenderPath;
+    public PointcloudRenderPath pointRenderPath = PointcloudRenderPath.PolySpatial;
     public float pointSize = 0.02f;
     public float pointEmission = 1f;
 
@@ -235,6 +235,14 @@ namespace BuildingVolumes.Player
     {
       IPointCloudRenderer pcRenderer;
 
+#if !SHADERGRAPH_AVAILABLE
+      if (renderPath != PointcloudRenderPath.Legacy)
+      {
+        Debug.LogWarning("Shadergraph package not available, falling back to legacy pointcloud sequence rendering");
+        renderPath = PointcloudRenderPath.Legacy;
+      }
+#endif
+
       switch (renderPath)
       {
         case PointcloudRenderPath.Shadergraph:
@@ -261,7 +269,15 @@ namespace BuildingVolumes.Player
     {
       IMeshSequenceRenderer msRenderer;
 
-      if(renderPath == PointcloudRenderPath.PolySpatial)
+#if !SHADERGRAPH_AVAILABLE
+      if (renderPath != PointcloudRenderPath.Legacy)
+      {
+        Debug.LogWarning("Shadergraph package not available, falling back to legacy mesh sequence rendering");
+        renderPath = PointcloudRenderPath.Legacy;
+      }
+#endif
+
+      if (renderPath == PointcloudRenderPath.PolySpatial)
         msRenderer = gameObject.AddComponent<MeshSequenceRendererSC>();
       else
         msRenderer = gameObject.AddComponent<MeshSequenceRenderer>();
@@ -407,7 +423,7 @@ namespace BuildingVolumes.Player
         DestroyImmediate(thumbnailPCRenderer as UnityEngine.Object);
     }
 #endif
-    #endregion
+#endregion
 
     #region Debug
     void AttachFrameDebugger()
