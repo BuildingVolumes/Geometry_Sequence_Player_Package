@@ -93,7 +93,8 @@ LightmapSettings:
     m_ExportTrainingData: 0
     m_TrainingDataDestination: TrainingData
     m_LightProbeSampleCountMultiplier: 4
-  m_LightingDataAsset: {fileID: 112000000, guid: 4337f0824aaf13646ba2e6fd4d42676e, type: 2}
+  m_LightingDataAsset: {fileID: 112000000, guid: 4b5e15308657d974d8f5fd917f680b40,
+    type: 2}
   m_LightingSettings: {fileID: 1705581122}
 --- !u!196 &4
 NavMeshSettings:
@@ -180,6 +181,8 @@ MeshRenderer:
   m_RayTracingAccelStructBuildFlagsOverride: 0
   m_RayTracingAccelStructBuildFlags: 1
   m_SmallMeshCulling: 1
+  m_ForceMeshLod: -1
+  m_MeshLodSelectionBias: 0
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
@@ -201,6 +204,7 @@ MeshRenderer:
   m_AutoUVMaxDistance: 0.5
   m_AutoUVMaxAngle: 89
   m_LightmapParameters: {fileID: 0}
+  m_GlobalIlluminationMeshLod: 0
   m_SortingLayerID: 0
   m_SortingLayer: 0
   m_SortingOrder: 0
@@ -273,7 +277,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e2731264125d1524693cb97001b1cfc1, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  relativePath: Samples\Geometry Sequence Player\1.1.1\Sequence Samples\ExampleData\Pointcloud_Sequence_Sample
+  relativePath: Samples\Geometry Sequence Player\1.2.0\Sequence Samples\ExampleData\Pointcloud_Sequence_Sample
   pathRelation: 1
   playAtStart: 1
   loopPlay: 1
@@ -301,11 +305,12 @@ MonoBehaviour:
   threadCount: 4
   attachFrameDebugger: 0
   frameDebugger: {fileID: 0}
-  meshMaterial: {fileID: 2100000, guid: 817ccae3035334c4c916fcf9ad8b0cd4, type: 2}
+  customMaterial: {fileID: 0}
+  instantiateMaterial: 1
   materialSlots: 1
   customMaterialSlots: []
+  pointRenderPath: 1
   pointSize: 0.003
-  pointType: 0
   pointEmission: 1
   readerInitialized: 0
   frameDropped: 0
@@ -617,6 +622,7 @@ MonoBehaviour:
   ySpeed: 120
   yMinLimit: -20
   yMaxLimit: 80
+  autoRotateEnabled: 1
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

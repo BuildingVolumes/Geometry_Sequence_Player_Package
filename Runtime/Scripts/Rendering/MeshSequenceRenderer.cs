@@ -12,7 +12,7 @@ namespace BuildingVolumes.Player
     MeshRenderer streamedMeshRenderer;
     Texture2D streamedMeshTexture;
 
-    Material defaultMeshMaterial;
+    Material meshMaterial;
     bool textured;
 
     private void Awake()
@@ -35,8 +35,7 @@ namespace BuildingVolumes.Player
       streamedMeshObject = CreateStreamObject("MeshRenderer", streamedMeshParent.transform);
       ConfigureMeshRenderer(streamedMeshObject, config, true, out streamedMeshRenderer, out streamedMeshFilter, out streamedMeshTexture);
 
-      LoadDefaultMaterials();
-      ChangeMaterial(defaultMeshMaterial, true);
+      ChangeMaterial(meshMaterial, true);
 
       if (config.textureMode == SequenceConfiguration.TextureMode.None)
         textured = false;
@@ -147,7 +146,7 @@ namespace BuildingVolumes.Player
     public void ChangeMaterial(Material material, GeometrySequenceStream.MaterialProperties properties, List<string> customProperties, bool instantiateMaterial)
     {
       if (material == null)
-        material = defaultMeshMaterial;
+        material = LoadDefaultMaterials();
 
       Material newMat;
 
@@ -158,6 +157,7 @@ namespace BuildingVolumes.Player
 
       ApplyTextureToMaterial(newMat, streamedMeshTexture, properties, customProperties);
       streamedMeshRenderer.sharedMaterial = newMat;
+      meshMaterial = newMat;
     }
 
     void ApplyTextureToMaterial(Material mat, Texture tex, GeometrySequenceStream.MaterialProperties properties, List<string> customProperties)
@@ -201,16 +201,17 @@ namespace BuildingVolumes.Player
       streamedMeshRenderer.enabled = false;
     }
 
-    void LoadDefaultMaterials()
+    Material LoadDefaultMaterials()
     {
-      if (defaultMeshMaterial == null)
-      {
+      Material defaultMaterial;
 #if (!SHADERGRAPH_AVAILABLE)
-        defaultMeshMaterial = Resources.Load("Legacy/Mesh_Unlit_Legacy", typeof(Material)) as Material;
+      defaultMaterial = Resources.Load("Legacy/Mesh_Unlit_Legacy", typeof(Material)) as Material;
 #else
-        defaultMeshMaterial = Resources.Load("ShaderGraph/Mesh_Unlit_ShaderGraph", typeof(Material)) as Material;
+      defaultMaterial = Resources.Load("ShaderGraph/Unlit_Mesh", typeof(Material)) as Material;
 #endif
-      }
+
+      return defaultMaterial;
+
     }
 
     public void Dispose()

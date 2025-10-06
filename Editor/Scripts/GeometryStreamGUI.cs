@@ -74,21 +74,14 @@ namespace BuildingVolumes.Player
 
       bool updateMaterial = false;
       EditorGUI.BeginChangeCheck();
-      
-      //EditorGUILayout.PropertyField(customMaterial);
-      //if(customMaterial.objectReferenceValue != null)
-      //  EditorGUILayout.PropertyField(instantiateMaterial);
-      //else
-      //  instantiateMaterial.boolValue = true;
 
-      showMaterialSlots = EditorGUILayout.Foldout(showMaterialSlots, "Material Slots");
-      if (showMaterialSlots)
-      {
-        EditorGUILayout.PropertyField(materialSlots, new GUIContent("Apply to texture slots: "));
-        EditorGUILayout.PropertyField(customMaterialSlots, new GUIContent("Custom texture slots"));
-      }
-      updateMaterial = EditorGUI.EndChangeCheck();
+      EditorGUILayout.PropertyField(customMaterial);
+      if (customMaterial.objectReferenceValue != null)
+        EditorGUILayout.PropertyField(instantiateMaterial);
+      else
+        instantiateMaterial.boolValue = true;
 
+      GUILayout.Space(10);
 
       GUILayout.Label("Pointcloud Settings", EditorStyles.boldLabel);
 
@@ -109,6 +102,16 @@ namespace BuildingVolumes.Player
       GUILayout.Space(10);
 
       GUILayout.Label("Mesh Settings", EditorStyles.boldLabel);
+
+      showMaterialSlots = EditorGUILayout.Foldout(showMaterialSlots, "Material Slots");
+      if (showMaterialSlots)
+      {
+        EditorGUILayout.PropertyField(materialSlots, new GUIContent("Apply to texture slots: "));
+        EditorGUILayout.PropertyField(customMaterialSlots, new GUIContent("Custom texture slots"));
+      }
+      updateMaterial = EditorGUI.EndChangeCheck();
+
+      GUILayout.Label("Playback Settings", EditorStyles.boldLabel);
 
       showBufferOptions = EditorGUILayout.Foldout(showBufferOptions, "Buffer Options");
       if (showBufferOptions)
