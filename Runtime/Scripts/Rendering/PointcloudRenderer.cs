@@ -57,7 +57,7 @@ namespace BuildingVolumes.Player
     /// <param name="meshfilter">The mesh filter which will contains the final mesh of the pointclouds</param>
     /// <param name="pointSize">The diameter of the points in Unity units</param>
     /// <returns></returns>
-    public void Setup(SequenceConfiguration configuration, Transform parent, float pointSize, float emission, Material mat)
+    public void Setup(SequenceConfiguration configuration, Transform parent, float pointSize, float emission, Material mat, bool instantiateMaterial)
     {
       Dispose();
 
@@ -123,7 +123,7 @@ namespace BuildingVolumes.Player
       pointcloudMaterial = mat;
       if (!pointcloudMaterial)
         pointcloudMaterial = LoadDefaultMaterial();
-      SetPointcloudMaterial(mat, pointSize, emission);
+      SetPointcloudMaterial(mat, pointSize, emission, instantiateMaterial);
 
       buffersInitialized = true;
 
@@ -253,7 +253,7 @@ namespace BuildingVolumes.Player
 
     public void SetPointEmission(float emission)
     {
-      if(pcMeshRenderer)
+      if (pcMeshRenderer)
         if (pcMeshRenderer.sharedMaterial.HasProperty("_Emission"))
           pcMeshRenderer.sharedMaterial.SetFloat("_Emission", emission);
       pointEmission = emission;
@@ -270,20 +270,23 @@ namespace BuildingVolumes.Player
       return newStreamObject;
     }
 
-    public void SetPointcloudMaterial(Material mat)
+    public void SetPointcloudMaterial(Material mat, bool instantiateMaterial)
     {
       if (pcMeshRenderer)
       {
         if (mat)
-          pcMeshRenderer.material = new Material(mat);
+          if (instantiateMaterial)
+            pcMeshRenderer.material = new Material(mat);
+          else
+            pcMeshRenderer.material = mat;
         else
-          pcMeshRenderer.material = LoadDefaultMaterial();
+            pcMeshRenderer.material = LoadDefaultMaterial();
       }
     }
 
-    public void SetPointcloudMaterial(Material mat, float pointSize, float pointEmission)
+    public void SetPointcloudMaterial(Material mat, float pointSize, float pointEmission, bool instantiateMaterial)
     {
-      SetPointcloudMaterial(mat);      
+      SetPointcloudMaterial(mat, instantiateMaterial);
       SetPointSize(pointSize);
       SetPointEmission(pointEmission);
     }
@@ -299,14 +302,14 @@ namespace BuildingVolumes.Player
     }
 
     public Material LoadDefaultMaterial()
-    {      
+    {
       Material mat = Resources.Load("Legacy/Pointcloud_Circles_Legacy", typeof(Material)) as Material;
 
       if (!mat)
         Debug.LogError("Could not load default pointcloud material at Resources/Legacy/Pointcloud_Circles_Legacy");
 
       return mat;
-     
+
     }
 
     public void Dispose()

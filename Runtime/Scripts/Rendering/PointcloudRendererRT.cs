@@ -48,7 +48,7 @@ namespace BuildingVolumes.Player
     /// <param name="maxPointCount">The maximum number of points that could appear in any frame of the sequence</param>
     /// <param name="meshFilter">The meshfilter where the point geometry data will be rendered into</param>
     /// <param name="meshRenderer">The meshrenderer used for rendering the points. Will be auto-configured</param>
-    public void Setup(SequenceConfiguration configuration, Transform parent, float pointSize, float pointEmission, Material pointMaterial)
+    public void Setup(SequenceConfiguration configuration, Transform parent, float pointSize, float pointEmission, Material pointMaterial, bool instantiateMaterial)
     {
       Dispose();
 
@@ -84,7 +84,7 @@ namespace BuildingVolumes.Player
       //Create the pointcloud mesh with n points
       pcObject = MeshCreation(configuration);
 
-      SetPointcloudMaterial(currentPointcloudMaterial, pointSize, pointEmission);
+      SetPointcloudMaterial(pointMaterial, pointSize, pointEmission, instantiateMaterial);
     }
 
     /// <summary>
@@ -184,12 +184,12 @@ namespace BuildingVolumes.Player
     }
 
 
-    public void SetPointcloudMaterial(Material mat)
+    public void SetPointcloudMaterial(Material mat, bool instantiateMaterial)
     {
-      SetPointcloudMaterial(mat, currentPointSize, currentPointEmission);
+      SetPointcloudMaterial(mat, currentPointSize, currentPointEmission, instantiateMaterial);
     }
 
-    public void SetPointcloudMaterial(Material mat, float pointSize, float pointEmission)
+    public void SetPointcloudMaterial(Material mat, float pointSize, float pointEmission, bool instantiateMaterial)
     {
       if (!mat)
         mat = LoadDefaultMaterial();
@@ -198,7 +198,12 @@ namespace BuildingVolumes.Player
       currentPointSize = pointSize;
       currentPointEmission = pointEmission;
 
-      Material newMat = new Material(mat);
+      Material newMat;
+      
+      if(instantiateMaterial)
+        newMat = new Material(mat);
+      else
+        newMat = mat;
       newMat.SetFloat(rtResolutionID, rtResolution);
       newMat.SetTexture(rtPositionSourceID, rtPositions);
       newMat.SetTexture(rtColorSourceID, rtColors);

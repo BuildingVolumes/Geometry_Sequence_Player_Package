@@ -13,6 +13,7 @@ namespace BuildingVolumes.Player
     GeometrySequenceStream stream;
 
     SerializedProperty customMaterial;
+    SerializedProperty instantiateMaterial;
     SerializedProperty materialSlots;
     SerializedProperty customMaterialSlots;
     SerializedProperty pointSize;
@@ -41,6 +42,7 @@ namespace BuildingVolumes.Player
     private void OnEnable()
     {
       customMaterial = serializedObject.FindProperty("customMaterial");
+      instantiateMaterial = serializedObject.FindProperty("instantiateMaterial");
       materialSlots = serializedObject.FindProperty("materialSlots");
       customMaterialSlots = serializedObject.FindProperty("customMaterialSlots");
       pointSize = serializedObject.FindProperty("pointSize");
@@ -64,7 +66,6 @@ namespace BuildingVolumes.Player
       renderPathIndex = pointSystem.enumValueIndex;
 
       serializedObject.ApplyModifiedProperties();
-
     }
 
     public override void OnInspectorGUI()
@@ -73,7 +74,13 @@ namespace BuildingVolumes.Player
 
       bool updateMaterial = false;
       EditorGUI.BeginChangeCheck();
-      EditorGUILayout.PropertyField(customMaterial);
+      
+      //EditorGUILayout.PropertyField(customMaterial);
+      //if(customMaterial.objectReferenceValue != null)
+      //  EditorGUILayout.PropertyField(instantiateMaterial);
+      //else
+      //  instantiateMaterial.boolValue = true;
+
       showMaterialSlots = EditorGUILayout.Foldout(showMaterialSlots, "Material Slots");
       if (showMaterialSlots)
       {

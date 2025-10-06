@@ -36,7 +36,7 @@ namespace BuildingVolumes.Player
       ConfigureMeshRenderer(streamedMeshObject, config, true, out streamedMeshRenderer, out streamedMeshFilter, out streamedMeshTexture);
 
       LoadDefaultMaterials();
-      ChangeMaterial(defaultMeshMaterial);
+      ChangeMaterial(defaultMeshMaterial, true);
 
       if (config.textureMode == SequenceConfiguration.TextureMode.None)
         textured = false;
@@ -139,17 +139,23 @@ namespace BuildingVolumes.Player
       return true;
     }
 
-    public void ChangeMaterial(Material material)
+    public void ChangeMaterial(Material material, bool instantiateMaterial)
     {
-      ChangeMaterial(material, GeometrySequenceStream.MaterialProperties.Albedo, null);
+      ChangeMaterial(material, GeometrySequenceStream.MaterialProperties.Albedo, null, instantiateMaterial);
     }
 
-    public void ChangeMaterial(Material material, GeometrySequenceStream.MaterialProperties properties, List<string> customProperties)
+    public void ChangeMaterial(Material material, GeometrySequenceStream.MaterialProperties properties, List<string> customProperties, bool instantiateMaterial)
     {
       if (material == null)
         material = defaultMeshMaterial;
 
-      Material newMat = new Material(material);
+      Material newMat;
+
+      if (instantiateMaterial)
+        newMat = new Material(material);
+      else
+        newMat = material;
+
       ApplyTextureToMaterial(newMat, streamedMeshTexture, properties, customProperties);
       streamedMeshRenderer.sharedMaterial = newMat;
     }

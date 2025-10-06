@@ -54,7 +54,7 @@ namespace BuildingVolumes.Player
     /// <param name="maxPointCount">The maximum number of points that could appear in any frame of the sequence</param>
     /// <param name="meshFilter">The meshfilter where the point geometry data will be rendered into</param>
     /// <param name="meshRenderer">The meshrenderer used for rendering the points. Will be auto-configured</param>
-    public void Setup(SequenceConfiguration configuration, Transform parent, float pointSize, float pointEmission, Material mat)
+    public void Setup(SequenceConfiguration configuration, Transform parent, float pointSize, float pointEmission, Material mat, bool instantiateMaterial)
     {
       Dispose();
 
@@ -95,7 +95,7 @@ namespace BuildingVolumes.Player
       computeShaderRT.SetTexture(0, rtColorsID, rtColors);
 
       //Create the pointcloud mesh with n points
-      StartCoroutine(MeshCreation(configuration, pointSize, pointEmission, mat));
+      StartCoroutine(MeshCreation(configuration, pointSize, pointEmission, mat, instantiateMaterial));
     }
 
     /// <summary>
@@ -104,7 +104,7 @@ namespace BuildingVolumes.Player
     /// and also distribute the mesh over multiple Meshfilters.
     /// Otherwise, we risk fatal crashes where the AVP needs to restart
     /// </summary>
-    IEnumerator MeshCreation(SequenceConfiguration config, float pointSize, float pointEmission, Material mat)
+    IEnumerator MeshCreation(SequenceConfiguration config, float pointSize, float pointEmission, Material mat, bool instantiateMaterial)
     {
       //Wait a few seconds when the app has just started, otherwise we risk crashing polyspatial
       if (Time.time < 3f && Application.isPlaying)
@@ -131,7 +131,7 @@ namespace BuildingVolumes.Player
         meshObjects.Add(newMeshlet);
 
         meshFilter.sharedMesh.bounds = config.GetBounds();
-        SetMaterial(meshRenderer, mat, j, pointSize, pointEmission);
+        SetMaterial(meshRenderer, mat, j, pointSize, pointEmission, instantiateMaterial);
 
         if (Application.isPlaying)
           yield return StartCoroutine(DeltaTimeStabilizer("Meshlet added"));
@@ -195,21 +195,21 @@ namespace BuildingVolumes.Player
     }
 
    
-    public void SetPointcloudMaterial(Material mat)
+    public void SetPointcloudMaterial(Material mat, bool instantiateMaterial)
     {
-      SetPointcloudMaterial(mat, currentPointSize, currentPointEmission);
+      SetPointcloudMaterial(mat, currentPointSize, currentPointEmission, instantiateMaterial);
     }
 
-    public void SetPointcloudMaterial(Material mat, float pointSize, float pointEmission)
+    public void SetPointcloudMaterial(Material mat, float pointSize, float pointEmission, bool instantiateMaterial)
     {
-      StartCoroutine(SetMaterialsOverTime(mat, pointSize, pointEmission));
+      StartCoroutine(SetMaterialsOverTime(mat, pointSize, pointEmission, instantiateMaterial));
     }
 
     /// <summary>
     /// On Polyspatial, materials need to be set slowly over time, so that RealityKit can catch up with the new materials
     /// </summary>
     /// <param name="mat"></param>
-    IEnumerator SetMaterialsOverTime(Material mat, float pointSize, float pointEmission)
+    IEnumerator SetMaterialsOverTime(Material mat, float pointSize, float pointEmission, bool instantiateMaterial)
     {
       if (meshRenderers != null)
       {
@@ -217,19 +217,25 @@ namespace BuildingVolumes.Player
         {
           if (meshRenderers[i] != null)
           {
-            SetMaterial(meshRenderers[i], mat, i, pointSize, pointEmission);
+            SetMaterial(meshRenderers[i], mat, i, pointSize, pointEmission, instantiateMaterial);
             yield return null;
           }
         }
       }
     }
 
-    void SetMaterial(MeshRenderer renderer, Material mat, int meshletIndex, float pointSize, float pointEmission)
+    void SetMaterial(MeshRenderer renderer, Material mat, int meshletIndex, float pointSize, float pointEmission, bool instantiateMaterial)
     {
       if (!mat)
         mat = LoadDefaultMaterial();
 
-      Material newMat = new Material(mat);
+      Material newMat;
+
+      if(instantiateMaterial)
+        newMat = new Material(mat);
+      else
+        newMat = mat;
+     
       newMat.SetFloat(rtResolutionID, rtResolution);
       newMat.SetFloat(rtVertexOffsetID, meshletIndex * meshletQuadCount * 4);
       newMat.SetTexture(rtPositionSourceID, rtPositions);

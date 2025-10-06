@@ -4,9 +4,6 @@ using Unity.Jobs.LowLevel.Unsafe;
 using System;
 using System.Collections.Generic;
 using UnityEditor;
-using Codice.Client.BaseCommands;
-using UnityEngine.UIElements;
-
 
 
 #if UNITY_VISIONOS
@@ -35,6 +32,7 @@ namespace BuildingVolumes.Player
 
     //Materials
     public Material customMaterial;
+    public bool instantiateMaterial = true;
     public MaterialProperties materialSlots = MaterialProperties.Albedo;
     public List<string> customMaterialSlots;
 
@@ -260,7 +258,7 @@ namespace BuildingVolumes.Player
       }
 
       (pcRenderer as Component).hideFlags = HideFlags.HideAndDontSave;
-      pcRenderer.Setup(reader.sequenceConfig, this.transform, pointSize, pointEmission, customMaterial);
+      pcRenderer.Setup(reader.sequenceConfig, this.transform, pointSize, pointEmission, customMaterial, instantiateMaterial);
 
       return pcRenderer;
     }
@@ -286,7 +284,7 @@ namespace BuildingVolumes.Player
       msRenderer.Setup(this.transform, reader.sequenceConfig);
 
       if (customMaterial != null)
-        msRenderer.ChangeMaterial(customMaterial);
+        msRenderer.ChangeMaterial(customMaterial, instantiateMaterial);
 
       //If we have a single texture in the sequence, we read it immeiatly
       if (reader.sequenceConfig.textureMode == SequenceConfiguration.TextureMode.Single)
@@ -312,14 +310,20 @@ namespace BuildingVolumes.Player
       thumbnailPCRenderer?.SetPointEmission(pointEmission);
     }
 
+
     public void SetMaterial(Material mat)
     {
-      customMaterial = mat;
-      pointcloudRenderer?.SetPointcloudMaterial(mat);
-      thumbnailPCRenderer?.SetPointcloudMaterial(mat);
+      SetMaterial(mat, instantiateMaterial);
+    }
 
-      meshSequenceRenderer?.ChangeMaterial(mat);
-      thumbnailMeshRenderer?.ChangeMaterial(mat);
+    public void SetMaterial(Material mat, bool instantiate)
+    {
+      customMaterial = mat;
+      pointcloudRenderer?.SetPointcloudMaterial(mat, instantiate);
+      thumbnailPCRenderer?.SetPointcloudMaterial(mat, instantiate);
+
+      meshSequenceRenderer?.ChangeMaterial(mat, instantiate);
+      thumbnailMeshRenderer?.ChangeMaterial(mat, instantiate);
     }
 
     public void SetRenderingPath(PointcloudRenderPath renderPath)
