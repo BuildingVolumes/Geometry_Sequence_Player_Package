@@ -3,10 +3,12 @@ using UnityEngine;
 using UnityEngine.Rendering;
 using Unity.Collections;
 using static TMPro.SpriteAssetUtilities.TexturePacker_JsonArray;
+using System;
 namespace BuildingVolumes.Player
 {
   public class PointcloudRenderer : MonoBehaviour, IPointCloudRenderer
   {
+    SequenceConfiguration configuration;
     private ComputeShader computeShader;
     private float pointScale = 0.005f;
     private float pointEmission = 1f;
@@ -17,6 +19,9 @@ namespace BuildingVolumes.Player
     int pointSourceCount2 = 0;
     GraphicsBuffer pointSourceBuffer3;
     int pointSourceCount3 = 0;
+
+    int sourceBufferStride = 4 * 4;
+    int sourceBufferStrideNormals = 4 * 7;
 
     GraphicsBuffer vertexBuffer;
     GraphicsBuffer indexBuffer;
@@ -47,6 +52,8 @@ namespace BuildingVolumes.Player
     static readonly int pointCountID1 = Shader.PropertyToID("_PointCount1");
     static readonly int pointCountID2 = Shader.PropertyToID("_PointCount2");
     static readonly int pointCountID3 = Shader.PropertyToID("_PointCount3");
+    static readonly int hasNormalsID = Shader.PropertyToID("_HasNormals");
+    static readonly int bufferStrideID = Shader.PropertyToID("_BufferStride");
 
     /// <summary>
     /// Prepares all buffers used for pointcloud rendering. This needs to be executed once per sequence
@@ -60,6 +67,8 @@ namespace BuildingVolumes.Player
     public void Setup(SequenceConfiguration configuration, Transform parent, float pointSize, float emission, Material mat, bool instantiateMaterial)
     {
       Dispose();
+
+      this.configuration = configuration;
 
       pcObject = CreateStreamObject("PointcloudRenderer", parent);
 
@@ -94,13 +103,22 @@ namespace BuildingVolumes.Player
       VertexAttributeDescriptor vp = new VertexAttributeDescriptor(VertexAttribute.Position, VertexAttributeFormat.Float32, 3);
       VertexAttributeDescriptor vc = new VertexAttributeDescriptor(VertexAttribute.Color, VertexAttributeFormat.UNorm8, 4);
       VertexAttributeDescriptor vt = new VertexAttributeDescriptor(VertexAttribute.TexCoord0, VertexAttributeFormat.Float32, 2);
+      VertexAttributeDescriptor vn = new VertexAttributeDescriptor(VertexAttribute.Normal, VertexAttributeFormat.Float32, 3);
 
-      pcMesh.SetVertexBufferParams(configuration.maxVertexCount * 4, vp, vc, vt);
+      if(configuration.hasNormals)
+        pcMesh.SetVertexBufferParams(configuration.maxVertexCount * 4, vp, vc, vt, vn);
+      else
+        pcMesh.SetVertexBufferParams(configuration.maxVertexCount * 4, vp, vc, vt);
+
       pcMesh.SetIndexBufferParams(configuration.maxVertexCount * 6, IndexFormat.UInt32);
       pcMesh.SetSubMesh(0, new SubMeshDescriptor(0, configuration.maxVertexCount * 6), MeshUpdateFlags.DontRecalculateBounds);
 
       vertexBuffer = pcMesh.GetVertexBuffer(0);
       indexBuffer = pcMesh.GetIndexBuffer();
+
+      computeShader.SetBool(hasNormalsID, configuration.hasNormals);
+      int bufferStride = configuration.hasNormals ? sourceBufferStrideNormals : sourceBufferStride;
+      computeShader.SetInt(bufferStrideID, bufferStride);
 
       computeShader.SetBuffer(0, vertexBufferID, vertexBuffer);
       computeShader.SetBuffer(1, vertexBufferID, vertexBuffer);
@@ -115,15 +133,15 @@ namespace BuildingVolumes.Player
       computeShader.SetBuffer(1, pointSourceID2, pointSourceBuffer2);
       computeShader.SetBuffer(2, pointSourceID3, pointSourceBuffer3);
 
-      //Run a shader dispatch that creates only invisible quads to clean the buffers
-      int groupSize = Mathf.CeilToInt(configuration.maxVertexCount / 128f);
-      computeShader.SetInt(pointCountID1, 0);
-      computeShader.Dispatch(2, groupSize, 1, 1);
-
       pointcloudMaterial = mat;
       if (!pointcloudMaterial)
         pointcloudMaterial = LoadDefaultMaterial();
       SetPointcloudMaterial(mat, pointSize, emission, instantiateMaterial);
+
+      //Run a shader dispatch that creates only invisible quads to clean the buffers
+      int groupSize = Mathf.CeilToInt(configuration.maxVertexCount / 128f);
+      computeShader.SetInt(pointCountID1, 0);
+      computeShader.Dispatch(2, groupSize, 1, 1);
 
       buffersInitialized = true;
 
@@ -175,7 +193,8 @@ namespace BuildingVolumes.Player
     void UpdatePointBuffer(Frame frame, GraphicsBuffer pointBuffer)
     {
       maxPointCount = pointBuffer.count;
-      NativeArray<byte> pointdataGPU = pointBuffer.LockBufferForWrite<byte>(0, pointBuffer.count * 4 * 4); //Locking buffer is faster than GraphicsBuffer.SetData;
+      int byteStride = configuration.hasNormals ? sourceBufferStrideNormals : sourceBufferStride;
+      NativeArray<byte> pointdataGPU = pointBuffer.LockBufferForWrite<byte>(0, pointBuffer.count * byteStride); //Locking buffer is faster than GraphicsBuffer.SetData;
       frame.geoJob.vertexBuffer.CopyTo(pointdataGPU);
       pointBuffer.UnlockBufferAfterWrite<byte>(frame.geoJob.vertexBuffer.Length);
       isDataSet = true;
@@ -339,6 +358,54 @@ namespace BuildingVolumes.Player
       if (computeShader != null)
         DestroyImmediate(computeShader);
     }
+
+    #region DebugMeshBuffer
+
+    //[Button("Get Vertices")]
+    //public void GetVertices()
+    //{
+    //  GraphicsBuffer vertexBuffer = pcMeshFilter.sharedMesh.GetVertexBuffer(0);
+    //  GraphicsBuffer indexBuffer = pcMeshFilter.sharedMesh.GetIndexBuffer();
+
+    //  byte[] vertexBufferData = new byte[vertexBuffer.count * vertexBuffer.stride];
+    //  vertexBuffer.GetData(vertexBufferData);
+
+    //  byte[] indexBufferData = new byte[indexBuffer.count * indexBuffer.stride];
+    //  indexBuffer.GetData(indexBufferData);
+
+    //  uint[] indexBufferUint = new uint[indexBuffer.count];
+    //  for (int i = 0; i < indexBuffer.count; i++)
+    //  {
+    //    int byteAdress = i * 4;
+    //    indexBufferUint[i] = BitConverter.ToUInt32(indexBufferData, byteAdress);
+    //  }
+
+    //  Vector3[] vPositions = new Vector3[vertexBuffer.count];
+    //  uint[] vColors = new uint[vertexBuffer.count];
+    //  Vector2[] vUVs = new Vector2[vertexBuffer.count];
+    //  Vector3[] vNormals = new Vector3[vertexBuffer.count];
+
+    //  for (int i = 0; i < vertexBuffer.count; i++)
+    //  {
+    //    int byteAdress = i * 6 * 4;
+    //    float xPos = BitConverter.ToSingle(vertexBufferData, byteAdress + 0);
+    //    float yPos = BitConverter.ToSingle(vertexBufferData, byteAdress + 4);
+    //    float zPos = BitConverter.ToSingle(vertexBufferData, byteAdress + 8);
+
+    //    vPositions[i] = new Vector3(xPos, yPos, zPos);
+    //  }
+
+
+    //  //fTileMeshFilter.sharedMesh.SetVertexBufferData<byte>(vertexBufferData, 0, 0, vertexBufferData.Length);
+    //  //fTileMeshFilter.sharedMesh.SetIndexBufferData<byte>(indexBufferData, 0, 0, indexBufferData.Length);
+    //  //fTileMeshFilter.sharedMesh.UploadMeshData(false);
+
+    //  Debug.Log("Gottem");
+    //}
+
+
+    #endregion
+
 
     #region RenderInEditor
 

@@ -24,13 +24,22 @@ StructuredBuffer<float4x4> _RotateToCamera;
 //Size of the points in Unity dimensions
 float _PointScale;
 
+//Size of one point in the source buffery in bytes
+float _BufferStride;
+
+//If custom normals should be loaded from the point source buffer
+bool _hasNormals;
+
 //Just a simple quad mesh
 struct _PointQuad
 {
-    float3 vertex1;
-    float3 vertex2;
-    float3 vertex3;
-    float3 vertex4;
+    float3 vertexPosition1;
+    float3 vertexPosition2;
+    float3 vertexPosition3;
+    float3 vertexPosition4;
+    
+    float3 vertexNormal;
+    uint color;
 
     uint3 triangle1;
     uint3 triangle2;
@@ -41,13 +50,86 @@ struct _PointQuad
     float2 uv4;
 };
 
+_PointQuad InitializeEmptyQuad()
+{
+    _PointQuad quad;
+    
+    quad.vertexPosition1 = float3(1, 1, 1);
+    quad.vertexPosition2 = float3(2, 2, 2);
+    quad.vertexPosition3 = float3(3, 3, 3);
+    quad.vertexPosition4 = float3(4, 4, 4);
+
+    quad.vertexNormal = float3(0, 0, -1);
+    quad.color = uint(0);
+
+    quad.triangle1 = uint3(0, 0, 0);
+    quad.triangle2 = uint3(0, 0, 0);
+
+    quad.uv1 = float2(0, 0);
+    quad.uv2 = float2(0, 0);
+    quad.uv3 = float2(0, 0);
+    quad.uv4 = float2(0, 0);
+    
+    return quad;
+}
+
+//Create a quad mesh on each point position
+_PointQuad CreateQuad(int id, float scale)
+{
+    uint vertexIndex = id * 4;
+    
+    //Create a quad
+    _PointQuad outQuad = InitializeEmptyQuad();
+    
+    ////Create the initial vertice positions. The vertices are ordered in this way:    
+    //// 2--1
+    //// |  |
+    //// 3--4
+    
+    outQuad.vertexPosition1 = float3(scale, scale, 0);
+    outQuad.vertexPosition2 = float3(-scale, scale, 0);
+    outQuad.vertexPosition3 = float3(-scale, -scale, 0);
+    outQuad.vertexPosition4 = float3(scale, -scale, 0);
+    
+    //We only need one normal per quad, as all vertices face the same direction
+    outQuad.vertexNormal = float3(0, 0, -1);
+    
+    ////Create our faces. We indice from the top right corner in an anti-clockwise direction
+    ////    <-- 
+    ////   3--0 
+    //// | | /|
+    //// v |/ |   
+    ////   2--1
+    ////    ->   
+   
+    outQuad.triangle1 = uint3(0 + vertexIndex, 3 + vertexIndex, 2 + vertexIndex);
+    outQuad.triangle2 = uint3(2 + vertexIndex, 1 + vertexIndex, 0 + vertexIndex);
+    
+    ////Create UV coordinates, structured this way:
+    ////
+    //// y:
+    //// 1   .--.
+    //// |   |  |
+    ////-1   .--.
+    ////
+    //// x: -1 - 1
+    
+    outQuad.uv1 = float2(1, 1);
+    outQuad.uv2 = float2(-1, 1);
+    outQuad.uv3 = float2(-1, -1);
+    outQuad.uv4 = float2(1, -1);
+    
+    return outQuad;
+}
+
 // Gets the vertex position (xyz float) from the point source buffer
 float3 GetPositionFromPointSourceBuffer(int id, ByteAddressBuffer buffer)
 {
     //We access the raw vertex buffer of the mesh vertices. As this buffer is raw, we don't have a handy struct to navigate it
 	//and need to find the memory addresses ourselves. Luckily, we create the mesh ourselves, so we know that we have:
 	//Vertex = float3 position (3 floats) + unorm8 vertexcolor (1 uint) = 4 * 4 bytes per vertex
-    uint pointIndex = id.x * 4 * 4;
+    //If there are normals, there are an additional 3 bytes
+    uint pointIndex = id * _BufferStride;
 
 	//All values in the Raw vertex buffer can only be retrieved as ints
     uint3 positionRaw = buffer.Load3(pointIndex);
@@ -59,130 +141,116 @@ float3 GetPositionFromPointSourceBuffer(int id, ByteAddressBuffer buffer)
 // Get the 32bit uint from the buffer that contains the colors in RGBA format
 uint GetColorFromPointSourceBuffer(int id, ByteAddressBuffer buffer)
 {
-    uint pointIndex = id.x * 4 * 4 + 12;
+    uint pointIndex = id.x * _BufferStride + 12;
     return buffer.Load(pointIndex);
 }
 
-//Rotate quad towards camera
-_PointQuad RotateQuad(_PointQuad quad, float4x4 rotationMat)
-{;
-    quad.vertex1 = mul(rotationMat, float4(quad.vertex1, 1.0)).xyz;
-    quad.vertex2 = mul(rotationMat, float4(quad.vertex2, 1.0)).xyz;
-    quad.vertex3 = mul(rotationMat, float4(quad.vertex3, 1.0)).xyz;
-    quad.vertex4 = mul(rotationMat, float4(quad.vertex4, 1.0)).xyz;
+float3 GetNormalFromPointSourceBuffer(int id, ByteAddressBuffer buffer)
+{
+    uint normalIndex = id.x * _BufferStride + 13;
+    uint3 normalRaw = buffer.Load3(normalIndex);
+    return asfloat(normalRaw);
+}
+
+_PointQuad ApplyPosition(_PointQuad quad, uint id, ByteAddressBuffer sourceBuffer)
+{
+    float3 position = GetPositionFromPointSourceBuffer(id, sourceBuffer);
+
+    quad.vertexPosition1 = quad.vertexPosition1 + position;
+    quad.vertexPosition2 = quad.vertexPosition2 + position;
+    quad.vertexPosition3 = quad.vertexPosition3 + position;
+    quad.vertexPosition4 = quad.vertexPosition4 + position;
+    
     return quad;
 }
 
-//Set quad to the point position
-_PointQuad TranslateQuad(_PointQuad quad, float3 position)
+_PointQuad ApplyRotation(_PointQuad quad, float4x4 rotationMat)
 {
-    quad.vertex1 = quad.vertex1 + position;
-    quad.vertex2 = quad.vertex2 + position;
-    quad.vertex3 = quad.vertex3 + position;
-    quad.vertex4 = quad.vertex4 + position;
+    //Rotate the point to face the camera    
+    quad.vertexPosition1 = mul(rotationMat, float4(quad.vertexPosition1, 1.0)).xyz;
+    quad.vertexPosition2 = mul(rotationMat, float4(quad.vertexPosition2, 1.0)).xyz;
+    quad.vertexPosition3 = mul(rotationMat, float4(quad.vertexPosition3, 1.0)).xyz;
+    quad.vertexPosition4 = mul(rotationMat, float4(quad.vertexPosition4, 1.0)).xyz;
     return quad;
 }
 
-//Create a quad mesh on each point position
-_PointQuad CreateQuad(float3 pos, int id, float scale)
-{    
-    //Create a quad
-    _PointQuad outQuad = { float3(scale, scale, 0), float3(-scale, scale, 0), float3(-scale, -scale, 0), float3(scale, -scale, 0), uint3(0, 0, 0), uint3(0, 0, 0), float2(0, 0), float2(0, 0), float2(0, 0), float2(0,0) };
-    
-    //First rotate the point to face the camera
-    outQuad = RotateQuad(outQuad, _RotateToCamera[0]);
-    
-    //Then position it according to source array
-    outQuad = TranslateQuad(outQuad, pos);
-       
-    //Create our faces. We indice from the top right corner in an anti-clockwise direction
-    uint i = id * 4;
-    outQuad.triangle1 = uint3(2 + i, 1 + i, 0 + i);
-    outQuad.triangle2 = uint3(0 + i, 3 + i, 2 + i);
-    
-    //Create UV coordinates
-    outQuad.uv1 = float2(1, 1);
-    outQuad.uv2 = float2(-1, 1);
-    outQuad.uv3 = float2(-1, -1);
-    outQuad.uv4 = float2(1, -1);
-    
-    return outQuad;
+_PointQuad ApplyNormal(_PointQuad quad, uint3 id, ByteAddressBuffer sourceBuffer)
+{
+    if(_hasNormals)
+        quad.vertexNormal = GetNormalFromPointSourceBuffer(id.x, sourceBuffer);    
+    return quad;
 }
 
-// A quad that is invisible. If we didn't use the maximum amount of points in the buffer
-// this is used to erase any quads from the previous call
-_PointQuad CreateEmptyQuad()
+_PointQuad ApplyColor(_PointQuad quad, uint3 id, ByteAddressBuffer sourceBuffer)
 {
-    _PointQuad outQuad = { float3(0, 0, 0), float3(0, 0, 0), float3(0, 0, 0), float3(0, 0, 0), uint3(0, 0, 0), uint3(0, 0, 0), float2(0, 0), float2(0, 0), float2(0, 0), float2(0, 0) };
-    return outQuad;
+    quad.color = GetColorFromPointSourceBuffer(id.x, sourceBuffer);
+    return quad;
+}
+
+void StoreQuadVertexData(float3 pos, uint col, float2 uv, float3 norm, uint id, int quadVertexIndex)
+{
+    //The vertex size for a quad consists out of:  3 floats per vertice posiion + 1 uint for color + 2 floats per UV + optionally 3 floats per normal
+    uint positionSize = 3 * 4;
+    uint colorSize = 1 * 4;
+    uint uvSize = 2 * 4;
+    uint normalSize = 3 * 4;
+
+    uint vertexSize = positionSize + colorSize + uvSize;
+    if (_hasNormals)
+        vertexSize += normalSize;
+    
+    //To get the adress where we store our vertex, we multiply it with the global quad index (id) times 4 (vertices per quad) and add the vertex 
+    //sizes from the quad vertex index
+    uint vBufferPos = vertexSize * id * 4;
+    vBufferPos += quadVertexIndex * vertexSize;
+    
+    //Finally, store the data as uints int the output buffer.
+    _VertexBuffer.Store3(vBufferPos, asuint(pos));
+    _VertexBuffer.Store(vBufferPos + positionSize, asuint(col));
+    _VertexBuffer.Store2(vBufferPos + positionSize + colorSize, asuint(uv));
+    if (_hasNormals)
+        _VertexBuffer.Store3(vBufferPos + positionSize + colorSize + uvSize, asuint(norm));    
+}
+
+void StoreQuadIndicesData(uint3 face, uint id, int faceIndex)
+{
+    uint faceSize = 3 * 4;
+    uint indiceBufferPos = id * faceSize * 2;
+    indiceBufferPos = indiceBufferPos + (faceSize * faceIndex);
+    _IndexBuffer.Store3(indiceBufferPos, face);
 }
 
 // Write a quad to the output buffer that contains the mesh
-void StoreQuad(_PointQuad quad, uint color, int id)
+void StoreQuad(_PointQuad quad, uint id)
 {
-    //The vertex buffer position for a quad is: Thread ID * 4 (vertices per quad) * 3 (floats per vertice posiion) * 2 (floats per UV) + 1 (uint for color))
-    uint vBufferPos = (id * 4 * (3 + 2 + 1));
-    
-    //Add offset for each vertex + vertexcolor and then multiply by amount of bytes per float (4) to get the final byte adress
-    uint vPos1 = (vBufferPos + 0) * 4;
-    uint cPos1 = (vBufferPos + 3) * 4;
-    uint tPos1 = (vBufferPos + 4) * 4;
-    
-    uint vPos2 = (vBufferPos + 6) * 4;
-    uint cPos2 = (vBufferPos + 9) * 4;
-    uint tPos2 = (vBufferPos + 10) * 4;
-    
-    uint vPos3 = (vBufferPos + 12) * 4;
-    uint cPos3 = (vBufferPos + 15) * 4;
-    uint tPos3 = (vBufferPos + 16) * 4;
+    StoreQuadVertexData(quad.vertexPosition1, quad.color, quad.uv1, quad.vertexNormal, id, 0);
+    StoreQuadVertexData(quad.vertexPosition2, quad.color, quad.uv2, quad.vertexNormal, id, 1);
+    StoreQuadVertexData(quad.vertexPosition3, quad.color, quad.uv3, quad.vertexNormal, id, 2);
+    StoreQuadVertexData(quad.vertexPosition4, quad.color, quad.uv4, quad.vertexNormal, id, 3);
 
-    uint vPos4 = (vBufferPos + 18) * 4;
-    uint cPos4 = (vBufferPos + 21) * 4;
-    uint tPos4 = (vBufferPos + 22) * 4;;
-    
-    //The indice buffer byte position for a quad is Thread ID * 2 (indices per quad) * 3 (ints per indice)
-    uint iBufferPos = id * 2 * 3;
-    
-    //Add offset for each indice and then multiply by amount of bytes per uint (4) to get the final byte adress
-    uint iPos1 = (iBufferPos + 0) * 4;
-    uint iPos2 = (iBufferPos + 3) * 4;
-    
-    //Write the vertex positions and vertex colors, so that they can be read and used from a vertex/fragment shader
-    _VertexBuffer.Store3(vPos1, asuint(quad.vertex1));
-    _VertexBuffer.Store(cPos1, color);
-    _VertexBuffer.Store2(tPos1, asuint(quad.uv1));
-    _VertexBuffer.Store3(vPos2, asuint(quad.vertex2));
-    _VertexBuffer.Store(cPos2, color);
-    _VertexBuffer.Store2(tPos2, asuint(quad.uv2));
-    _VertexBuffer.Store3(vPos3, asuint(quad.vertex3));
-    _VertexBuffer.Store(cPos3, color);
-    _VertexBuffer.Store2(tPos3, asuint(quad.uv3));
-    _VertexBuffer.Store3(vPos4, asuint(quad.vertex4));
-    _VertexBuffer.Store(cPos4, color);
-    _VertexBuffer.Store2(tPos4, asuint(quad.uv4));
-
-    //Write the face indices
-    _IndexBuffer.Store3(iPos1, quad.triangle1);
-    _IndexBuffer.Store3(iPos2, quad.triangle2);
+    StoreQuadIndicesData(quad.triangle1, id, 0);
+    StoreQuadIndicesData(quad.triangle2, id, 1);
 }
 
 void CreatePointcloud(uint3 id, ByteAddressBuffer buffer, int pointCount)
 {    
     _PointQuad quad;
-    uint color = uint(0);
     
-    if (id.x < (uint) pointCount)
+    if (id.x < (uint) pointCount) //If this point is visible this frame, fill it
     {
-        float3 position = GetPositionFromPointSourceBuffer(id.x, buffer);
-        color = GetColorFromPointSourceBuffer(id.x, buffer);
-        quad = CreateQuad(position, id.x, _PointScale);
+        quad = CreateQuad(id.x, _PointScale);
+        quad = ApplyRotation(quad, _RotateToCamera[0]);
+        quad = ApplyPosition(quad, id.x, buffer);
+        quad = ApplyColor(quad, id, buffer);
+        quad = ApplyNormal(quad, id, buffer);
     }
     else
     {
-        quad = CreateEmptyQuad();
-    }  
+        quad = InitializeEmptyQuad();
+    }
     
-    StoreQuad(quad, color, id.x);
+    StoreQuad(quad, id.x);
+    
 }
 
 
