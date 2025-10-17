@@ -28,7 +28,7 @@ float _PointScale;
 float _BufferStride;
 
 //If custom normals should be loaded from the point source buffer
-bool _hasNormals;
+bool _HasNormals;
 
 //Just a simple quad mesh
 struct _PointQuad
@@ -39,6 +39,7 @@ struct _PointQuad
     float3 vertexPosition4;
     
     float3 vertexNormal;
+    float4 vertexTangent;
     uint color;
 
     uint3 triangle1;
@@ -54,12 +55,13 @@ _PointQuad InitializeEmptyQuad()
 {
     _PointQuad quad;
     
-    quad.vertexPosition1 = float3(1, 1, 1);
-    quad.vertexPosition2 = float3(2, 2, 2);
-    quad.vertexPosition3 = float3(3, 3, 3);
-    quad.vertexPosition4 = float3(4, 4, 4);
+    quad.vertexPosition1 = float3(0, 0, 0);
+    quad.vertexPosition2 = float3(0, 0, 0);
+    quad.vertexPosition3 = float3(0, 0, 0);
+    quad.vertexPosition4 = float3(0, 0, 0);
 
-    quad.vertexNormal = float3(0, 0, -1);
+    quad.vertexNormal = float3(0,0,1);
+    quad.vertexTangent = float4(0, 0, 0, 1);
     quad.color = uint(0);
 
     quad.triangle1 = uint3(0, 0, 0);
@@ -81,10 +83,10 @@ _PointQuad CreateQuad(int id, float scale)
     //Create a quad
     _PointQuad outQuad = InitializeEmptyQuad();
     
-    ////Create the initial vertice positions. The vertices are ordered in this way:    
-    //// 2--1
-    //// |  |
-    //// 3--4
+    //Create the initial vertice positions. The vertices are ordered in this way:    
+    // 2--1
+    // |  |
+    // 3--4
     
     outQuad.vertexPosition1 = float3(scale, scale, 0);
     outQuad.vertexPosition2 = float3(-scale, scale, 0);
@@ -92,27 +94,27 @@ _PointQuad CreateQuad(int id, float scale)
     outQuad.vertexPosition4 = float3(scale, -scale, 0);
     
     //We only need one normal per quad, as all vertices face the same direction
-    outQuad.vertexNormal = float3(0, 0, -1);
+    outQuad.vertexNormal = float3(0, 0, 1);
     
-    ////Create our faces. We indice from the top right corner in an anti-clockwise direction
-    ////    <-- 
-    ////   3--0 
-    //// | | /|
-    //// v |/ |   
-    ////   2--1
-    ////    ->   
+    //Create our faces. We indice from the top right corner in an anti-clockwise direction
+    //    <-- 
+    //   3--0 
+    // | | /|
+    // v |/ |   
+    //   2--1
+    //    ->   
    
     outQuad.triangle1 = uint3(0 + vertexIndex, 3 + vertexIndex, 2 + vertexIndex);
     outQuad.triangle2 = uint3(2 + vertexIndex, 1 + vertexIndex, 0 + vertexIndex);
     
-    ////Create UV coordinates, structured this way:
-    ////
-    //// y:
-    //// 1   .--.
-    //// |   |  |
-    ////-1   .--.
-    ////
-    //// x: -1 - 1
+    //Create UV coordinates, structured this way:
+    //
+    //  y:
+    //  1   .--.
+    //  |   |  |
+    // -1   .--.
+    // 
+    //  x: -1 - 1
     
     outQuad.uv1 = float2(1, 1);
     outQuad.uv2 = float2(-1, 1);
@@ -127,8 +129,8 @@ float3 GetPositionFromPointSourceBuffer(int id, ByteAddressBuffer buffer)
 {
     //We access the raw vertex buffer of the mesh vertices. As this buffer is raw, we don't have a handy struct to navigate it
 	//and need to find the memory addresses ourselves. Luckily, we create the mesh ourselves, so we know that we have:
-	//Vertex = float3 position (3 floats) + unorm8 vertexcolor (1 uint) = 4 * 4 bytes per vertex
-    //If there are normals, there are an additional 3 bytes
+	//Vertex = float3 position + unorm8 vertexcolor = 4 * 4 bytes per vertex
+	//Vertex with normal = float3 position + float3 normal + unorm8 vertexcolor = 4 * 4 bytes per vertex
     uint pointIndex = id * _BufferStride;
 
 	//All values in the Raw vertex buffer can only be retrieved as ints
@@ -141,15 +143,21 @@ float3 GetPositionFromPointSourceBuffer(int id, ByteAddressBuffer buffer)
 // Get the 32bit uint from the buffer that contains the colors in RGBA format
 uint GetColorFromPointSourceBuffer(int id, ByteAddressBuffer buffer)
 {
-    uint pointIndex = id.x * _BufferStride + 12;
+    int offset = 12;
+    if(_HasNormals)
+        offset = 24;
+    
+    uint pointIndex = id.x * _BufferStride + offset;
     return buffer.Load(pointIndex);
 }
 
 float3 GetNormalFromPointSourceBuffer(int id, ByteAddressBuffer buffer)
-{
-    uint normalIndex = id.x * _BufferStride + 13;
+{    
+    uint normalIndex = id.x * _BufferStride + 12;
     uint3 normalRaw = buffer.Load3(normalIndex);
-    return asfloat(normalRaw);
+    float3 normal = asfloat(normal);
+    normal = (0, 0, 1);
+    return normal;
 }
 
 _PointQuad ApplyPosition(_PointQuad quad, uint id, ByteAddressBuffer sourceBuffer)
@@ -176,8 +184,13 @@ _PointQuad ApplyRotation(_PointQuad quad, float4x4 rotationMat)
 
 _PointQuad ApplyNormal(_PointQuad quad, uint3 id, ByteAddressBuffer sourceBuffer)
 {
-    if(_hasNormals)
-        quad.vertexNormal = GetNormalFromPointSourceBuffer(id.x, sourceBuffer);    
+    if (_HasNormals)
+    {
+        quad.vertexNormal = GetNormalFromPointSourceBuffer(id.x, sourceBuffer);
+
+        
+        
+    }
     return quad;
 }
 
@@ -187,17 +200,21 @@ _PointQuad ApplyColor(_PointQuad quad, uint3 id, ByteAddressBuffer sourceBuffer)
     return quad;
 }
 
-void StoreQuadVertexData(float3 pos, uint col, float2 uv, float3 norm, uint id, int quadVertexIndex)
+void StoreQuadVertexData(float3 pos, uint col, float2 uv, float3 norm, float4 tang, uint id, int quadVertexIndex)
 {
     //The vertex size for a quad consists out of:  3 floats per vertice posiion + 1 uint for color + 2 floats per UV + optionally 3 floats per normal
     uint positionSize = 3 * 4;
     uint colorSize = 1 * 4;
     uint uvSize = 2 * 4;
     uint normalSize = 3 * 4;
+    uint tangentSize = 4 * 4;
 
     uint vertexSize = positionSize + colorSize + uvSize;
-    if (_hasNormals)
+    if (_HasNormals)
+    {
         vertexSize += normalSize;
+        vertexSize += tangentSize;
+    }
     
     //To get the adress where we store our vertex, we multiply it with the global quad index (id) times 4 (vertices per quad) and add the vertex 
     //sizes from the quad vertex index
@@ -205,11 +222,27 @@ void StoreQuadVertexData(float3 pos, uint col, float2 uv, float3 norm, uint id, 
     vBufferPos += quadVertexIndex * vertexSize;
     
     //Finally, store the data as uints int the output buffer.
-    _VertexBuffer.Store3(vBufferPos, asuint(pos));
-    _VertexBuffer.Store(vBufferPos + positionSize, asuint(col));
-    _VertexBuffer.Store2(vBufferPos + positionSize + colorSize, asuint(uv));
-    if (_hasNormals)
-        _VertexBuffer.Store3(vBufferPos + positionSize + colorSize + uvSize, asuint(norm));    
+    int adress = vBufferPos;
+    
+    //Positions
+    _VertexBuffer.Store3(adress, asuint(pos));
+    adress += positionSize;
+    
+    //Normals
+    if (_HasNormals)
+    {
+        _VertexBuffer.Store3(adress, asuint(norm));
+        adress += normalSize;
+        _VertexBuffer.Store4(adress, asuint(tang));
+        adress += tangentSize;
+    }
+    
+    //Colors
+    _VertexBuffer.Store(adress, asuint(col));
+    adress += colorSize;
+    
+    //UVs
+    _VertexBuffer.Store2(adress, asuint(uv));
 }
 
 void StoreQuadIndicesData(uint3 face, uint id, int faceIndex)
@@ -223,10 +256,10 @@ void StoreQuadIndicesData(uint3 face, uint id, int faceIndex)
 // Write a quad to the output buffer that contains the mesh
 void StoreQuad(_PointQuad quad, uint id)
 {
-    StoreQuadVertexData(quad.vertexPosition1, quad.color, quad.uv1, quad.vertexNormal, id, 0);
-    StoreQuadVertexData(quad.vertexPosition2, quad.color, quad.uv2, quad.vertexNormal, id, 1);
-    StoreQuadVertexData(quad.vertexPosition3, quad.color, quad.uv3, quad.vertexNormal, id, 2);
-    StoreQuadVertexData(quad.vertexPosition4, quad.color, quad.uv4, quad.vertexNormal, id, 3);
+    StoreQuadVertexData(quad.vertexPosition1, quad.color, quad.uv1, quad.vertexNormal, quad.vertexTangent, id, 0);
+    StoreQuadVertexData(quad.vertexPosition2, quad.color, quad.uv2, quad.vertexNormal, quad.vertexTangent, id, 1);
+    StoreQuadVertexData(quad.vertexPosition3, quad.color, quad.uv3, quad.vertexNormal, quad.vertexTangent, id, 2);
+    StoreQuadVertexData(quad.vertexPosition4, quad.color, quad.uv4, quad.vertexNormal, quad.vertexTangent, id, 3);
 
     StoreQuadIndicesData(quad.triangle1, id, 0);
     StoreQuadIndicesData(quad.triangle2, id, 1);

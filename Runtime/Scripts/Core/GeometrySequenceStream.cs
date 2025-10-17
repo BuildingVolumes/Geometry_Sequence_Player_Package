@@ -257,7 +257,7 @@ namespace BuildingVolumes.Player
           break;
       }
 
-      (pcRenderer as Component).hideFlags = HideFlags.HideAndDontSave;
+      (pcRenderer as Component).hideFlags = HideFlags.DontSave;
       pcRenderer.Setup(reader.sequenceConfig, this.transform, pointSize, pointEmission, customMaterial, instantiateMaterial);
 
       return pcRenderer;

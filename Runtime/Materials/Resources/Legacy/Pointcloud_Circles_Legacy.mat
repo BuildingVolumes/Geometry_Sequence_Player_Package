@@ -8,7 +8,7 @@ Material:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_Name: Pointcloud_Circles_Legacy
-  m_Shader: {fileID: 4800000, guid: 73a01d172c86daf4abc6f36eebce42f1, type: 3}
+  m_Shader: {fileID: 4800000, guid: 4f19cf94aa1ffb14cabea5ea1be68934, type: 3}
   m_Parent: {fileID: 0}
   m_ModifiedSerializedProperties: 0
   m_ValidKeywords: []

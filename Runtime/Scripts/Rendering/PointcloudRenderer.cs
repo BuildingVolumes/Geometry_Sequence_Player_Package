@@ -2,7 +2,6 @@ using UnityEditor;
 using UnityEngine;
 using UnityEngine.Rendering;
 using Unity.Collections;
-using static TMPro.SpriteAssetUtilities.TexturePacker_JsonArray;
 using System;
 namespace BuildingVolumes.Player
 {
@@ -20,8 +19,8 @@ namespace BuildingVolumes.Player
     GraphicsBuffer pointSourceBuffer3;
     int pointSourceCount3 = 0;
 
-    int sourceBufferStride = 4 * 4;
-    int sourceBufferStrideNormals = 4 * 7;
+    int sourceBufferByteStride = 4 * 4;
+    int sourceBufferByteStrideNormals = 4 * 7;
 
     GraphicsBuffer vertexBuffer;
     GraphicsBuffer indexBuffer;
@@ -83,8 +82,8 @@ namespace BuildingVolumes.Player
       if (pcMeshFilter.sharedMesh == null)
         pcMeshFilter.sharedMesh = new Mesh();
 
-      pcMeshFilter.hideFlags = HideFlags.HideAndDontSave;
-      pcMeshRenderer.hideFlags = HideFlags.HideAndDontSave;
+      pcMeshFilter.hideFlags = HideFlags.DontSave;
+      pcMeshRenderer.hideFlags = HideFlags.DontSave;
 
       pcMesh = pcMeshFilter.sharedMesh;
       pcMesh.bounds = configuration.GetBounds();
@@ -92,21 +91,24 @@ namespace BuildingVolumes.Player
       if (computeShader == null)
         computeShader = (ComputeShader)Instantiate(Resources.Load("Legacy/Pointcloud", typeof(ComputeShader)));
 
+      int byteStride = configuration.hasNormals ? sourceBufferByteStrideNormals : sourceBufferByteStride;
+
       rotateToCameraMat = new GraphicsBuffer(GraphicsBuffer.Target.Structured, 1, 4 * 4 * 4);
-      pointSourceBuffer1 = new GraphicsBuffer(GraphicsBuffer.Target.Raw, GraphicsBuffer.UsageFlags.LockBufferForWrite, configuration.maxVertexCount, 4 * 4);
-      pointSourceBuffer2 = new GraphicsBuffer(GraphicsBuffer.Target.Raw, GraphicsBuffer.UsageFlags.LockBufferForWrite, configuration.maxVertexCount, 4 * 4);
-      pointSourceBuffer3 = new GraphicsBuffer(GraphicsBuffer.Target.Raw, GraphicsBuffer.UsageFlags.LockBufferForWrite, configuration.maxVertexCount, 4 * 4);
+      pointSourceBuffer1 = new GraphicsBuffer(GraphicsBuffer.Target.Raw, GraphicsBuffer.UsageFlags.LockBufferForWrite, configuration.maxVertexCount, byteStride);
+      pointSourceBuffer2 = new GraphicsBuffer(GraphicsBuffer.Target.Raw, GraphicsBuffer.UsageFlags.LockBufferForWrite, configuration.maxVertexCount, byteStride);
+      pointSourceBuffer3 = new GraphicsBuffer(GraphicsBuffer.Target.Raw, GraphicsBuffer.UsageFlags.LockBufferForWrite, configuration.maxVertexCount, byteStride);
 
       pcMesh.indexBufferTarget |= GraphicsBuffer.Target.Raw;
       pcMesh.vertexBufferTarget |= GraphicsBuffer.Target.Raw;
 
       VertexAttributeDescriptor vp = new VertexAttributeDescriptor(VertexAttribute.Position, VertexAttributeFormat.Float32, 3);
+      VertexAttributeDescriptor vn = new VertexAttributeDescriptor(VertexAttribute.Normal, VertexAttributeFormat.Float32, 3);
+      VertexAttributeDescriptor vtn = new VertexAttributeDescriptor(VertexAttribute.Tangent, VertexAttributeFormat.Float32, 4);
       VertexAttributeDescriptor vc = new VertexAttributeDescriptor(VertexAttribute.Color, VertexAttributeFormat.UNorm8, 4);
       VertexAttributeDescriptor vt = new VertexAttributeDescriptor(VertexAttribute.TexCoord0, VertexAttributeFormat.Float32, 2);
-      VertexAttributeDescriptor vn = new VertexAttributeDescriptor(VertexAttribute.Normal, VertexAttributeFormat.Float32, 3);
 
-      if(configuration.hasNormals)
-        pcMesh.SetVertexBufferParams(configuration.maxVertexCount * 4, vp, vc, vt, vn);
+      if (configuration.hasNormals)
+        pcMesh.SetVertexBufferParams(configuration.maxVertexCount * 4, vp, vn, vtn, vc, vt);
       else
         pcMesh.SetVertexBufferParams(configuration.maxVertexCount * 4, vp, vc, vt);
 
@@ -117,9 +119,7 @@ namespace BuildingVolumes.Player
       indexBuffer = pcMesh.GetIndexBuffer();
 
       computeShader.SetBool(hasNormalsID, configuration.hasNormals);
-      int bufferStride = configuration.hasNormals ? sourceBufferStrideNormals : sourceBufferStride;
-      computeShader.SetInt(bufferStrideID, bufferStride);
-
+      computeShader.SetInt(bufferStrideID, byteStride);
       computeShader.SetBuffer(0, vertexBufferID, vertexBuffer);
       computeShader.SetBuffer(1, vertexBufferID, vertexBuffer);
       computeShader.SetBuffer(2, vertexBufferID, vertexBuffer);
@@ -193,7 +193,7 @@ namespace BuildingVolumes.Player
     void UpdatePointBuffer(Frame frame, GraphicsBuffer pointBuffer)
     {
       maxPointCount = pointBuffer.count;
-      int byteStride = configuration.hasNormals ? sourceBufferStrideNormals : sourceBufferStride;
+      int byteStride = configuration.hasNormals ? sourceBufferByteStrideNormals : sourceBufferByteStride;
       NativeArray<byte> pointdataGPU = pointBuffer.LockBufferForWrite<byte>(0, pointBuffer.count * byteStride); //Locking buffer is faster than GraphicsBuffer.SetData;
       frame.geoJob.vertexBuffer.CopyTo(pointdataGPU);
       pointBuffer.UnlockBufferAfterWrite<byte>(frame.geoJob.vertexBuffer.Length);
@@ -299,7 +299,7 @@ namespace BuildingVolumes.Player
           else
             pcMeshRenderer.material = mat;
         else
-            pcMeshRenderer.material = LoadDefaultMaterial();
+          pcMeshRenderer.material = LoadDefaultMaterial();
       }
     }
 
@@ -361,47 +361,78 @@ namespace BuildingVolumes.Player
 
     #region DebugMeshBuffer
 
-    //[Button("Get Vertices")]
-    //public void GetVertices()
-    //{
-    //  GraphicsBuffer vertexBuffer = pcMeshFilter.sharedMesh.GetVertexBuffer(0);
-    //  GraphicsBuffer indexBuffer = pcMeshFilter.sharedMesh.GetIndexBuffer();
+    [Sirenix.OdinInspector.Button("Calculate Tangents")]
+    public void CalcTangents()
+    {
+      pcMeshFilter.sharedMesh.RecalculateTangents();
+    }
 
-    //  byte[] vertexBufferData = new byte[vertexBuffer.count * vertexBuffer.stride];
-    //  vertexBuffer.GetData(vertexBufferData);
+    [Sirenix.OdinInspector.Button("Get Vertices")]
+    public void GetVertices()
+    {
+      GraphicsBuffer vertexBuffer = pcMeshFilter.sharedMesh.GetVertexBuffer(0);
+      GraphicsBuffer indexBuffer = pcMeshFilter.sharedMesh.GetIndexBuffer();
 
-    //  byte[] indexBufferData = new byte[indexBuffer.count * indexBuffer.stride];
-    //  indexBuffer.GetData(indexBufferData);
+      //VertexAttributeDescriptor va1 = pcMeshFilter.sharedMesh.GetVertexAttribute(0);
+      //VertexAttributeDescriptor va2 = pcMeshFilter.sharedMesh.GetVertexAttribute(1);
+      //VertexAttributeDescriptor va3 = pcMeshFilter.sharedMesh.GetVertexAttribute(2);
+      //VertexAttributeDescriptor va4 = pcMeshFilter.sharedMesh.GetVertexAttribute(3);
 
-    //  uint[] indexBufferUint = new uint[indexBuffer.count];
-    //  for (int i = 0; i < indexBuffer.count; i++)
-    //  {
-    //    int byteAdress = i * 4;
-    //    indexBufferUint[i] = BitConverter.ToUInt32(indexBufferData, byteAdress);
-    //  }
+      byte[] vertexBufferData = new byte[vertexBuffer.count * vertexBuffer.stride];
+      vertexBuffer.GetData(vertexBufferData);
 
-    //  Vector3[] vPositions = new Vector3[vertexBuffer.count];
-    //  uint[] vColors = new uint[vertexBuffer.count];
-    //  Vector2[] vUVs = new Vector2[vertexBuffer.count];
-    //  Vector3[] vNormals = new Vector3[vertexBuffer.count];
+      byte[] indexBufferData = new byte[indexBuffer.count * indexBuffer.stride];
+      indexBuffer.GetData(indexBufferData);
 
-    //  for (int i = 0; i < vertexBuffer.count; i++)
-    //  {
-    //    int byteAdress = i * 6 * 4;
-    //    float xPos = BitConverter.ToSingle(vertexBufferData, byteAdress + 0);
-    //    float yPos = BitConverter.ToSingle(vertexBufferData, byteAdress + 4);
-    //    float zPos = BitConverter.ToSingle(vertexBufferData, byteAdress + 8);
+      uint[] indexBufferUint = new uint[indexBuffer.count];
+      for (int i = 0; i < indexBuffer.count; i++)
+      {
+        indexBufferUint[i] = BitConverter.ToUInt32(indexBufferData, i * 4);
+      }
 
-    //    vPositions[i] = new Vector3(xPos, yPos, zPos);
-    //  }
+      Vector3[] vPositions = new Vector3[vertexBuffer.count];
+      Vector3[] vNormals = new Vector3[vertexBuffer.count];
+      uint[] vColors = new uint[vertexBuffer.count];
+      Vector2[] vUVs = new Vector2[vertexBuffer.count];
+
+      int byteAdress = 0;
+
+      for (int i = 0; i < vertexBuffer.count; i++)
+      {
+        float xPos = BitConverter.ToSingle(vertexBufferData, byteAdress + 0);
+        float yPos = BitConverter.ToSingle(vertexBufferData, byteAdress + 4);
+        float zPos = BitConverter.ToSingle(vertexBufferData, byteAdress + 8);
+        vPositions[i] = new Vector3(xPos, yPos, zPos);
+        byteAdress += 12;
+
+        float xNor = BitConverter.ToSingle(vertexBufferData, byteAdress + 0);
+        float yNor = BitConverter.ToSingle(vertexBufferData, byteAdress + 4);
+        float zNor = BitConverter.ToSingle(vertexBufferData, byteAdress + 8);
+
+        if (!Mathf.Approximately(xNor, 0) || !Mathf.Approximately(yNor, 0) || !Mathf.Approximately(zNor, 1))
+          if (!Mathf.Approximately(xPos, 0) || !Mathf.Approximately(yPos, 0) || !Mathf.Approximately(zPos, 0))
+            Debug.Log("Mismatch");
+
+        vNormals[i] = new Vector3(xNor, yNor, zNor);
+        byteAdress += 12;
+        byteAdress += 16; // For tangents
+
+        vColors[i] = BitConverter.ToUInt32(vertexBufferData, byteAdress);
+        byteAdress += 4;
+
+        float texCoorU = BitConverter.ToSingle(vertexBufferData, byteAdress + 0);
+        float texCoorV = BitConverter.ToSingle(vertexBufferData, byteAdress + 4);
+        vUVs[i] = new Vector2(texCoorU, texCoorV);
+        byteAdress += 8;
+      }
 
 
-    //  //fTileMeshFilter.sharedMesh.SetVertexBufferData<byte>(vertexBufferData, 0, 0, vertexBufferData.Length);
-    //  //fTileMeshFilter.sharedMesh.SetIndexBufferData<byte>(indexBufferData, 0, 0, indexBufferData.Length);
-    //  //fTileMeshFilter.sharedMesh.UploadMeshData(false);
+      //fTileMeshFilter.sharedMesh.SetVertexBufferData<byte>(vertexBufferData, 0, 0, vertexBufferData.Length);
+      //fTileMeshFilter.sharedMesh.SetIndexBufferData<byte>(indexBufferData, 0, 0, indexBufferData.Length);
+      //fTileMeshFilter.sharedMesh.UploadMeshData(false);
 
-    //  Debug.Log("Gottem");
-    //}
+      Debug.Log("Gottem");
+    }
 
 
     #endregion
