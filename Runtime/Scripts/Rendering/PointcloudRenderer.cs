@@ -3,6 +3,8 @@ using UnityEngine;
 using UnityEngine.Rendering;
 using Unity.Collections;
 using System;
+
+
 namespace BuildingVolumes.Player
 {
   public class PointcloudRenderer : MonoBehaviour, IPointCloudRenderer
@@ -86,7 +88,13 @@ namespace BuildingVolumes.Player
       pcMeshRenderer.hideFlags = HideFlags.DontSave;
 
       pcMesh = pcMeshFilter.sharedMesh;
-      pcMesh.bounds = configuration.GetBounds();
+
+      Bounds bounds = new Bounds();
+      bounds.center = Vector3.zero;
+      bounds.size = new Vector3(1000, 1000, 1000);
+      pcMesh.bounds = bounds;
+
+      //pcMesh.bounds = configuration.GetBounds();
 
       if (computeShader == null)
         computeShader = (ComputeShader)Instantiate(Resources.Load("Legacy/Pointcloud", typeof(ComputeShader)));
@@ -103,12 +111,11 @@ namespace BuildingVolumes.Player
 
       VertexAttributeDescriptor vp = new VertexAttributeDescriptor(VertexAttribute.Position, VertexAttributeFormat.Float32, 3);
       VertexAttributeDescriptor vn = new VertexAttributeDescriptor(VertexAttribute.Normal, VertexAttributeFormat.Float32, 3);
-      VertexAttributeDescriptor vtn = new VertexAttributeDescriptor(VertexAttribute.Tangent, VertexAttributeFormat.Float32, 4);
       VertexAttributeDescriptor vc = new VertexAttributeDescriptor(VertexAttribute.Color, VertexAttributeFormat.UNorm8, 4);
       VertexAttributeDescriptor vt = new VertexAttributeDescriptor(VertexAttribute.TexCoord0, VertexAttributeFormat.Float32, 2);
 
       if (configuration.hasNormals)
-        pcMesh.SetVertexBufferParams(configuration.maxVertexCount * 4, vp, vn, vtn, vc, vt);
+        pcMesh.SetVertexBufferParams(configuration.maxVertexCount * 4, vp, vn, vc, vt);
       else
         pcMesh.SetVertexBufferParams(configuration.maxVertexCount * 4, vp, vc, vt);
 
@@ -361,13 +368,7 @@ namespace BuildingVolumes.Player
 
     #region DebugMeshBuffer
 
-    [Sirenix.OdinInspector.Button("Calculate Tangents")]
-    public void CalcTangents()
-    {
-      pcMeshFilter.sharedMesh.RecalculateTangents();
-    }
 
-    [Sirenix.OdinInspector.Button("Get Vertices")]
     public void GetVertices()
     {
       GraphicsBuffer vertexBuffer = pcMeshFilter.sharedMesh.GetVertexBuffer(0);
@@ -409,10 +410,6 @@ namespace BuildingVolumes.Player
         float yNor = BitConverter.ToSingle(vertexBufferData, byteAdress + 4);
         float zNor = BitConverter.ToSingle(vertexBufferData, byteAdress + 8);
 
-        if (!Mathf.Approximately(xNor, 0) || !Mathf.Approximately(yNor, 0) || !Mathf.Approximately(zNor, 1))
-          if (!Mathf.Approximately(xPos, 0) || !Mathf.Approximately(yPos, 0) || !Mathf.Approximately(zPos, 0))
-            Debug.Log("Mismatch");
-
         vNormals[i] = new Vector3(xNor, yNor, zNor);
         byteAdress += 12;
         byteAdress += 16; // For tangents
@@ -425,6 +422,8 @@ namespace BuildingVolumes.Player
         vUVs[i] = new Vector2(texCoorU, texCoorV);
         byteAdress += 8;
       }
+
+
 
 
       //fTileMeshFilter.sharedMesh.SetVertexBufferData<byte>(vertexBufferData, 0, 0, vertexBufferData.Length);

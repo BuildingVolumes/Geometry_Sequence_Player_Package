@@ -39,7 +39,7 @@ struct _PointQuad
     float3 vertexPosition4;
     
     float3 vertexNormal;
-    float4 vertexTangent;
+    
     uint color;
 
     uint3 triangle1;
@@ -61,7 +61,7 @@ _PointQuad InitializeEmptyQuad()
     quad.vertexPosition4 = float3(0, 0, 0);
 
     quad.vertexNormal = float3(0,0,1);
-    quad.vertexTangent = float4(0, 0, 0, 1);
+    
     quad.color = uint(0);
 
     quad.triangle1 = uint3(0, 0, 0);
@@ -91,7 +91,7 @@ _PointQuad CreateQuad(int id, float scale)
     outQuad.vertexPosition1 = float3(scale, scale, 0);
     outQuad.vertexPosition2 = float3(-scale, scale, 0);
     outQuad.vertexPosition3 = float3(-scale, -scale, 0);
-    outQuad.vertexPosition4 = float3(scale, -scale, 0);
+    outQuad.vertexPosition4 = float3(scale, -scale, 0); 
     
     //We only need one normal per quad, as all vertices face the same direction
     outQuad.vertexNormal = float3(0, 0, 1);
@@ -156,7 +156,7 @@ float3 GetNormalFromPointSourceBuffer(int id, ByteAddressBuffer buffer)
     uint normalIndex = id.x * _BufferStride + 12;
     uint3 normalRaw = buffer.Load3(normalIndex);
     float3 normal = asfloat(normal);
-    normal = (0, 0, 1);
+    normal = float3(0, 0, 1);
     return normal;
 }
 
@@ -164,6 +164,26 @@ _PointQuad ApplyPosition(_PointQuad quad, uint id, ByteAddressBuffer sourceBuffe
 {
     float3 position = GetPositionFromPointSourceBuffer(id, sourceBuffer);
 
+    quad.vertexPosition1 = quad.vertexPosition1 + position;
+    quad.vertexPosition2 = quad.vertexPosition2 + position;
+    quad.vertexPosition3 = quad.vertexPosition3 + position;
+    quad.vertexPosition4 = quad.vertexPosition4 + position;
+    
+    return quad;
+}
+
+//Just for debugging, spreads the pointcloud into a flat 2D grid
+_PointQuad ApplyGridPosition(_PointQuad quad, uint id, int pointCount)
+{
+    float gridStride = sqrt(float(pointCount));
+    
+    float gridx = float(id) / gridStride;
+    float gridy = float(id) % gridStride;
+    
+    float distance = 0.01f;
+    
+    float3 position = float3(gridx * distance, gridy * distance, 0);
+    
     quad.vertexPosition1 = quad.vertexPosition1 + position;
     quad.vertexPosition2 = quad.vertexPosition2 + position;
     quad.vertexPosition3 = quad.vertexPosition3 + position;
@@ -187,9 +207,6 @@ _PointQuad ApplyNormal(_PointQuad quad, uint3 id, ByteAddressBuffer sourceBuffer
     if (_HasNormals)
     {
         quad.vertexNormal = GetNormalFromPointSourceBuffer(id.x, sourceBuffer);
-
-        
-        
     }
     return quad;
 }
@@ -200,20 +217,18 @@ _PointQuad ApplyColor(_PointQuad quad, uint3 id, ByteAddressBuffer sourceBuffer)
     return quad;
 }
 
-void StoreQuadVertexData(float3 pos, uint col, float2 uv, float3 norm, float4 tang, uint id, int quadVertexIndex)
+void StoreQuadVertexData(float3 pos, uint col, float2 uv, float3 norm, uint id, int quadVertexIndex)
 {
     //The vertex size for a quad consists out of:  3 floats per vertice posiion + 1 uint for color + 2 floats per UV + optionally 3 floats per normal
     uint positionSize = 3 * 4;
     uint colorSize = 1 * 4;
     uint uvSize = 2 * 4;
     uint normalSize = 3 * 4;
-    uint tangentSize = 4 * 4;
 
     uint vertexSize = positionSize + colorSize + uvSize;
     if (_HasNormals)
     {
         vertexSize += normalSize;
-        vertexSize += tangentSize;
     }
     
     //To get the adress where we store our vertex, we multiply it with the global quad index (id) times 4 (vertices per quad) and add the vertex 
@@ -233,8 +248,6 @@ void StoreQuadVertexData(float3 pos, uint col, float2 uv, float3 norm, float4 ta
     {
         _VertexBuffer.Store3(adress, asuint(norm));
         adress += normalSize;
-        _VertexBuffer.Store4(adress, asuint(tang));
-        adress += tangentSize;
     }
     
     //Colors
@@ -256,10 +269,10 @@ void StoreQuadIndicesData(uint3 face, uint id, int faceIndex)
 // Write a quad to the output buffer that contains the mesh
 void StoreQuad(_PointQuad quad, uint id)
 {
-    StoreQuadVertexData(quad.vertexPosition1, quad.color, quad.uv1, quad.vertexNormal, quad.vertexTangent, id, 0);
-    StoreQuadVertexData(quad.vertexPosition2, quad.color, quad.uv2, quad.vertexNormal, quad.vertexTangent, id, 1);
-    StoreQuadVertexData(quad.vertexPosition3, quad.color, quad.uv3, quad.vertexNormal, quad.vertexTangent, id, 2);
-    StoreQuadVertexData(quad.vertexPosition4, quad.color, quad.uv4, quad.vertexNormal, quad.vertexTangent, id, 3);
+    StoreQuadVertexData(quad.vertexPosition1, quad.color, quad.uv1, quad.vertexNormal, id, 0);
+    StoreQuadVertexData(quad.vertexPosition2, quad.color, quad.uv2, quad.vertexNormal, id, 1);
+    StoreQuadVertexData(quad.vertexPosition3, quad.color, quad.uv3, quad.vertexNormal, id, 2);
+    StoreQuadVertexData(quad.vertexPosition4, quad.color, quad.uv4, quad.vertexNormal, id, 3);
 
     StoreQuadIndicesData(quad.triangle1, id, 0);
     StoreQuadIndicesData(quad.triangle2, id, 1);
