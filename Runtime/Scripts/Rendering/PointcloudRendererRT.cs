@@ -240,7 +240,7 @@ namespace BuildingVolumes.Player
 
     public void SetPointcloudMaterial(Material mat, float pointSize, float pointEmission, bool instantiateMaterial)
     {
-      SetPointcloudMaterial(mat, pointSize, pointEmission, instantiateMaterial);
+      SetPointcloudMaterial(mat, pointSize, pointEmission, instantiateMaterial, false);
     }
 
     public void SetPointcloudMaterial(Material mat, float pointSize, float pointEmission, bool instantiateMaterial, bool hasNormals = false)

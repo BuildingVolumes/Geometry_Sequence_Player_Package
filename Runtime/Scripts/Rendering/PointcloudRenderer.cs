@@ -19,7 +19,7 @@ namespace BuildingVolumes.Player
 
     //Triple buffered graphics buffer
     GraphicsBuffer[] pointSourceBuffers = new GraphicsBuffer[3];
-    int[] pointSourceCounts = new int[3];
+    int pointSourceCount;
 
     int sourceBufferByteStride = 4 * 4;
     int sourceBufferByteStrideNormals = 4 * 7;
@@ -40,7 +40,7 @@ namespace BuildingVolumes.Player
     int maxPointCount;
     bool isDataSet;
     bool buffersInitialized;
-    int bufferUpdateIndex;
+    int bufferIndex;
     int lastBufferUpdateFrame = -1;
 
     static readonly int vertexBufferID = Shader.PropertyToID("_VertexBuffer");
@@ -48,8 +48,8 @@ namespace BuildingVolumes.Player
     static readonly int rotateToCameraID = Shader.PropertyToID("_RotateToCamera");
     static readonly int pointScaleID = Shader.PropertyToID("_PointScale");
     static readonly int bufferStrideID = Shader.PropertyToID("_BufferStride");
-    static readonly string pointCountProperty = "_PointCount";
-    static readonly string pointSourceBufferProperty = "_PointSourceBuffer";
+    static readonly int pointCountID = Shader.PropertyToID("_PointCount");
+    static readonly int pointSourceBufferID = Shader.PropertyToID("_PointSourceBuffer");
 
 
     /// <summary>
@@ -123,27 +123,20 @@ namespace BuildingVolumes.Player
 
       computeShader.SetInt(bufferStrideID, byteStride);
 
-      for (int i = 0; i < pointSourceBuffers.Length; i++)
-      {
-        int kernel = i;
-        if (configuration.hasNormals)
-          kernel += 3;
-
-        computeShader.SetBuffer(kernel, vertexBufferID, vertexBuffer);
-        computeShader.SetBuffer(kernel, indexBufferID, indexBuffer);
-        computeShader.SetBuffer(kernel, rotateToCameraID, rotateToCameraMat);
-        computeShader.SetBuffer(kernel, pointSourceBufferProperty + i.ToString(), pointSourceBuffers[i]);
-      }
+      int kernel = configuration.hasNormals ? 1 : 0;
+      computeShader.SetInt(pointSourceCount, 0);
+      computeShader.SetBuffer(kernel, vertexBufferID, vertexBuffer);
+      computeShader.SetBuffer(kernel, indexBufferID, indexBuffer);
+      computeShader.SetBuffer(kernel, rotateToCameraID, rotateToCameraMat);
+      computeShader.SetBuffer(kernel, pointSourceBufferID, pointSourceBuffers[0]);
+      //Run a shader dispatch that creates only invisible quads to clean the buffers
+      int groupSize = Mathf.CeilToInt(configuration.maxVertexCount / 128f);
+      computeShader.Dispatch(configuration.hasNormals ? 1 : 0, groupSize, 1, 1);
 
       pointcloudMaterial = mat;
       if (!pointcloudMaterial)
         pointcloudMaterial = LoadDefaultMaterial(configuration.hasNormals);
-      SetPointcloudMaterial(mat, pointSize, emission, instantiateMaterial);
-
-      //Run a shader dispatch that creates only invisible quads to clean the buffers
-      int groupSize = Mathf.CeilToInt(configuration.maxVertexCount / 128f);
-      computeShader.SetInt(pointCountProperty + "0", 0);
-      computeShader.Dispatch(configuration.hasNormals ? 3 : 0, groupSize, 1, 1);
+      SetPointcloudMaterial(mat, pointSize, emission, instantiateMaterial);      
 
       buffersInitialized = true;
 
@@ -167,12 +160,12 @@ namespace BuildingVolumes.Player
 
       frame.geoJobHandle.Complete();
 
-      bufferUpdateIndex++;
-      if (bufferUpdateIndex == 3)
-        bufferUpdateIndex = 0;
+      bufferIndex++;
+      if (bufferIndex >= 3)
+        bufferIndex = 0;
 
-      pointSourceCounts[bufferUpdateIndex] = frame.geoJob.vertexCount;
-      UpdatePointBuffer(frame, pointSourceBuffers[bufferUpdateIndex]);
+      pointSourceCount = frame.geoJob.vertexCount;
+      UpdatePointBuffer(frame, pointSourceBuffers[bufferIndex]);
 
       lastBufferUpdateFrame = Time.frameCount;
     }
@@ -180,6 +173,7 @@ namespace BuildingVolumes.Player
     void UpdatePointBuffer(Frame frame, GraphicsBuffer pointBuffer)
     {
       maxPointCount = pointBuffer.count;
+      pointSourceCount = frame.geoJob.vertexCount;
       int byteStride = configuration.hasNormals ? sourceBufferByteStrideNormals : sourceBufferByteStride;
       NativeArray<byte> pointdataGPU = pointBuffer.LockBufferForWrite<byte>(0, pointBuffer.count * byteStride); //Locking buffer is faster than GraphicsBuffer.SetData;
       frame.geoJob.vertexBuffer.CopyTo(pointdataGPU);
@@ -218,9 +212,9 @@ namespace BuildingVolumes.Player
       Matrix4x4 rotateToCamMat = Matrix4x4.Rotate(fromObjectToCamera);
       rotateToCameraMat.SetData(new Matrix4x4[] { rotateToCamMat });
       int groupSize = Mathf.CeilToInt(maxPointCount / 128f);
-      int kernel = bufferUpdateIndex + (configuration.hasNormals ? 3 : 0);
-
-      computeShader.SetInt(pointCountProperty + bufferUpdateIndex, pointSourceCounts[bufferUpdateIndex]);
+      int kernel = configuration.hasNormals ? 1 : 0;
+      computeShader.SetBuffer(kernel, pointSourceBufferID, pointSourceBuffers[bufferIndex]);
+      computeShader.SetInt(pointCountID, pointSourceCount);
       computeShader.Dispatch(kernel, groupSize, 1, 1);
     }
 

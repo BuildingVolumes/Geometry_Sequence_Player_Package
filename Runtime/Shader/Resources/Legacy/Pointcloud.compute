@@ -1,19 +1,9 @@
-#pragma kernel CreatePointcloudBuffer0
-#pragma kernel CreatePointcloudBuffer1
-#pragma kernel CreatePointcloudBuffer2
-#pragma kernel CreatePointcloudWithNormalsBuffer0
-#pragma kernel CreatePointcloudWithNormalsBuffer1
-#pragma kernel CreatePointcloudWithNormalsBuffer2
+#pragma kernel CreatePointcloudBuffer
+#pragma kernel CreatePointcloudWithNormalsBuffer
 
 //Contains the point cloud, from which we read the point position and colors
-//As Unity needs up to three frames to load data into a new buffer, we 
-//use a triple buffered swapchain
-ByteAddressBuffer _PointSourceBuffer0;
-ByteAddressBuffer _PointSourceBuffer1;
-ByteAddressBuffer _PointSourceBuffer2;
-int _PointCount0;
-int _PointCount1;
-int _PointCount2;
+ByteAddressBuffer _PointSourceBuffer;
+int _PointCount;
 
 //Contains the vertice positions and colors of the quads we create
 RWByteAddressBuffer _VertexBuffer;
@@ -336,39 +326,15 @@ void CreatePointcloudWithNormal(uint3 id, ByteAddressBuffer buffer, int pointCou
 // calls these functions in a loop (1-2-3-1-2-3-1...) 
 
 [numthreads(128, 1, 1)]
-void CreatePointcloudBuffer0(uint3 id : SV_DispatchThreadID)
+void CreatePointcloudBuffer(uint3 id : SV_DispatchThreadID)
 {
-    CreatePointcloud(id, _PointSourceBuffer0, _PointCount0);
+    CreatePointcloud(id, _PointSourceBuffer, _PointCount);
 }
 
 [numthreads(128, 1, 1)]
-void CreatePointcloudBuffer1(uint3 id : SV_DispatchThreadID)
+void CreatePointcloudWithNormalsBuffer(uint3 id : SV_DispatchThreadID)
 {
-    CreatePointcloud(id, _PointSourceBuffer1, _PointCount1);
-}
-
-[numthreads(128, 1, 1)]
-void CreatePointcloudBuffer2(uint3 id : SV_DispatchThreadID)
-{
-    CreatePointcloud(id, _PointSourceBuffer2, _PointCount2);
-}
-
-[numthreads(128, 1, 1)]
-void CreatePointcloudWithNormalsBuffer0(uint3 id : SV_DispatchThreadID)
-{
-    CreatePointcloudWithNormal(id, _PointSourceBuffer0, _PointCount0);
-}
-
-[numthreads(128, 1, 1)]
-void CreatePointcloudWithNormalsBuffer1(uint3 id : SV_DispatchThreadID)
-{
-    CreatePointcloudWithNormal(id, _PointSourceBuffer1, _PointCount1);
-}
-
-[numthreads(128, 1, 1)]
-void CreatePointcloudWithNormalsBuffer2(uint3 id : SV_DispatchThreadID)
-{
-    CreatePointcloudWithNormal(id, _PointSourceBuffer2, _PointCount2);
+    CreatePointcloudWithNormal(id, _PointSourceBuffer, _PointCount);
 }
 
 
