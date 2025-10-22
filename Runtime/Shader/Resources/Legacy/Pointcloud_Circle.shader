@@ -1,4 +1,4 @@
-Shader "Unlit/Pointcloud_Circle"
+Shader "Pointclouds/Pointcloud_Circle"
 {
     Properties
     {

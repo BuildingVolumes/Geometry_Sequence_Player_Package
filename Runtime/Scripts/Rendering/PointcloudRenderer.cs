@@ -1,8 +1,11 @@
+using GluonGui.WorkspaceWindow.Views.WorkspaceExplorer.Explorer;
+using Sirenix.Serialization;
+using System;
+using Unity.Collections;
 using UnityEditor;
+using UnityEditor.Experimental.GraphView;
 using UnityEngine;
 using UnityEngine.Rendering;
-using Unity.Collections;
-using System;
 
 
 namespace BuildingVolumes.Player
@@ -14,12 +17,9 @@ namespace BuildingVolumes.Player
     private float pointScale = 0.005f;
     private float pointEmission = 1f;
 
-    GraphicsBuffer pointSourceBuffer1;
-    int pointSourceCount1 = 0;
-    GraphicsBuffer pointSourceBuffer2;
-    int pointSourceCount2 = 0;
-    GraphicsBuffer pointSourceBuffer3;
-    int pointSourceCount3 = 0;
+    //Triple buffered graphics buffer
+    GraphicsBuffer[] pointSourceBuffers = new GraphicsBuffer[3];
+    int[] pointSourceCounts = new int[3];
 
     int sourceBufferByteStride = 4 * 4;
     int sourceBufferByteStrideNormals = 4 * 7;
@@ -44,17 +44,14 @@ namespace BuildingVolumes.Player
     int lastBufferUpdateFrame = -1;
 
     static readonly int vertexBufferID = Shader.PropertyToID("_VertexBuffer");
-    static readonly int pointSourceID1 = Shader.PropertyToID("_PointSourceBuffer1");
-    static readonly int pointSourceID2 = Shader.PropertyToID("_PointSourceBuffer2");
-    static readonly int pointSourceID3 = Shader.PropertyToID("_PointSourceBuffer3");
     static readonly int indexBufferID = Shader.PropertyToID("_IndexBuffer");
     static readonly int rotateToCameraID = Shader.PropertyToID("_RotateToCamera");
     static readonly int pointScaleID = Shader.PropertyToID("_PointScale");
-    static readonly int pointCountID1 = Shader.PropertyToID("_PointCount1");
-    static readonly int pointCountID2 = Shader.PropertyToID("_PointCount2");
-    static readonly int pointCountID3 = Shader.PropertyToID("_PointCount3");
     static readonly int hasNormalsID = Shader.PropertyToID("_HasNormals");
     static readonly int bufferStrideID = Shader.PropertyToID("_BufferStride");
+    static readonly string pointCountProperty = "_PointCount";
+    static readonly string pointSourceBufferProperty = "_PointSourceBuffer";
+
 
     /// <summary>
     /// Prepares all buffers used for pointcloud rendering. This needs to be executed once per sequence
@@ -102,9 +99,9 @@ namespace BuildingVolumes.Player
       int byteStride = configuration.hasNormals ? sourceBufferByteStrideNormals : sourceBufferByteStride;
 
       rotateToCameraMat = new GraphicsBuffer(GraphicsBuffer.Target.Structured, 1, 4 * 4 * 4);
-      pointSourceBuffer1 = new GraphicsBuffer(GraphicsBuffer.Target.Raw, GraphicsBuffer.UsageFlags.LockBufferForWrite, configuration.maxVertexCount, byteStride);
-      pointSourceBuffer2 = new GraphicsBuffer(GraphicsBuffer.Target.Raw, GraphicsBuffer.UsageFlags.LockBufferForWrite, configuration.maxVertexCount, byteStride);
-      pointSourceBuffer3 = new GraphicsBuffer(GraphicsBuffer.Target.Raw, GraphicsBuffer.UsageFlags.LockBufferForWrite, configuration.maxVertexCount, byteStride);
+
+      for (int i = 0; i < pointSourceBuffers.Length; i++)
+        pointSourceBuffers[i] = new GraphicsBuffer(GraphicsBuffer.Target.Raw, GraphicsBuffer.UsageFlags.LockBufferForWrite, configuration.maxVertexCount, byteStride);
 
       pcMesh.indexBufferTarget |= GraphicsBuffer.Target.Raw;
       pcMesh.vertexBufferTarget |= GraphicsBuffer.Target.Raw;
@@ -127,28 +124,28 @@ namespace BuildingVolumes.Player
 
       computeShader.SetBool(hasNormalsID, configuration.hasNormals);
       computeShader.SetInt(bufferStrideID, byteStride);
-      computeShader.SetBuffer(0, vertexBufferID, vertexBuffer);
-      computeShader.SetBuffer(1, vertexBufferID, vertexBuffer);
-      computeShader.SetBuffer(2, vertexBufferID, vertexBuffer);
-      computeShader.SetBuffer(0, indexBufferID, indexBuffer);
-      computeShader.SetBuffer(1, indexBufferID, indexBuffer);
-      computeShader.SetBuffer(2, indexBufferID, indexBuffer);
-      computeShader.SetBuffer(0, rotateToCameraID, rotateToCameraMat);
-      computeShader.SetBuffer(1, rotateToCameraID, rotateToCameraMat);
-      computeShader.SetBuffer(2, rotateToCameraID, rotateToCameraMat);
-      computeShader.SetBuffer(0, pointSourceID1, pointSourceBuffer1);
-      computeShader.SetBuffer(1, pointSourceID2, pointSourceBuffer2);
-      computeShader.SetBuffer(2, pointSourceID3, pointSourceBuffer3);
+
+      for (int i = 0; i < pointSourceBuffers.Length; i++)
+      {
+        int kernel = i;
+        if (configuration.hasNormals)
+          kernel += 3;
+
+        computeShader.SetBuffer(kernel, vertexBufferID, vertexBuffer);
+        computeShader.SetBuffer(kernel, indexBufferID, indexBuffer);
+        computeShader.SetBuffer(kernel, rotateToCameraID, rotateToCameraMat);
+        computeShader.SetBuffer(kernel, pointSourceBufferProperty + i.ToString(), pointSourceBuffers[i]);
+      }
 
       pointcloudMaterial = mat;
       if (!pointcloudMaterial)
-        pointcloudMaterial = LoadDefaultMaterial();
+        pointcloudMaterial = LoadDefaultMaterial(configuration.hasNormals);
       SetPointcloudMaterial(mat, pointSize, emission, instantiateMaterial);
 
       //Run a shader dispatch that creates only invisible quads to clean the buffers
       int groupSize = Mathf.CeilToInt(configuration.maxVertexCount / 128f);
-      computeShader.SetInt(pointCountID1, 0);
-      computeShader.Dispatch(2, groupSize, 1, 1);
+      computeShader.SetInt(pointCountProperty + "0", 0);
+      computeShader.Dispatch(configuration.hasNormals ? 3 : 0, groupSize, 1, 1);
 
       buffersInitialized = true;
 
@@ -176,23 +173,8 @@ namespace BuildingVolumes.Player
       if (bufferUpdateIndex == 3)
         bufferUpdateIndex = 0;
 
-      if (bufferUpdateIndex == 0)
-      {
-        pointSourceCount1 = frame.geoJob.vertexCount;
-        UpdatePointBuffer(frame, pointSourceBuffer1);
-      }
-
-      if (bufferUpdateIndex == 1)
-      {
-        pointSourceCount2 = frame.geoJob.vertexCount;
-        UpdatePointBuffer(frame, pointSourceBuffer2);
-      }
-
-      if (bufferUpdateIndex == 2)
-      {
-        pointSourceCount3 = frame.geoJob.vertexCount;
-        UpdatePointBuffer(frame, pointSourceBuffer3);
-      }
+      pointSourceCounts[bufferUpdateIndex] = frame.geoJob.vertexCount;
+      UpdatePointBuffer(frame, pointSourceBuffers[bufferUpdateIndex]);
 
       lastBufferUpdateFrame = Time.frameCount;
     }
@@ -238,25 +220,10 @@ namespace BuildingVolumes.Player
       Matrix4x4 rotateToCamMat = Matrix4x4.Rotate(fromObjectToCamera);
       rotateToCameraMat.SetData(new Matrix4x4[] { rotateToCamMat });
       int groupSize = Mathf.CeilToInt(maxPointCount / 128f);
+      int kernel = bufferUpdateIndex + (configuration.hasNormals ? 3 : 0);
 
-
-      if (bufferUpdateIndex == 0)
-      {
-        computeShader.SetInt(pointCountID1, pointSourceCount1);
-        computeShader.Dispatch(0, groupSize, 1, 1);
-      }
-
-      if (bufferUpdateIndex == 1)
-      {
-        computeShader.SetInt(pointCountID2, pointSourceCount2);
-        computeShader.Dispatch(1, groupSize, 1, 1);
-      }
-
-      if (bufferUpdateIndex == 2)
-      {
-        computeShader.SetInt(pointCountID3, pointSourceCount3);
-        computeShader.Dispatch(2, groupSize, 1, 1);
-      }
+      computeShader.SetInt(pointCountProperty + bufferUpdateIndex, pointSourceCounts[bufferUpdateIndex]);
+      computeShader.Dispatch(kernel, groupSize, 1, 1);
     }
 
     /// <summary>
@@ -306,7 +273,7 @@ namespace BuildingVolumes.Player
           else
             pcMeshRenderer.material = mat;
         else
-          pcMeshRenderer.material = LoadDefaultMaterial();
+          pcMeshRenderer.material = LoadDefaultMaterial(configuration.hasNormals);
       }
     }
 
@@ -327,9 +294,14 @@ namespace BuildingVolumes.Player
       pcMeshRenderer.enabled = false;
     }
 
-    public Material LoadDefaultMaterial()
+    public Material LoadDefaultMaterial(bool normalSupported = false)
     {
-      Material mat = Resources.Load("Legacy/Pointcloud_Circles_Legacy", typeof(Material)) as Material;
+      Material mat;
+
+      if (normalSupported)
+        mat = Resources.Load("Legacy/Pointcloud_Circles_Legacy_Lit", typeof(Material)) as Material;
+      else
+        mat = Resources.Load("Legacy/Pointcloud_Circles_Legacy", typeof(Material)) as Material;
 
       if (!mat)
         Debug.LogError("Could not load default pointcloud material at Resources/Legacy/Pointcloud_Circles_Legacy");
@@ -342,16 +314,14 @@ namespace BuildingVolumes.Player
     {
       if (vertexBuffer != null)
         vertexBuffer.Release();
-      if (pointSourceBuffer1 != null)
-        pointSourceBuffer1.Release();
-      if (pointSourceBuffer2 != null)
-        pointSourceBuffer2.Release();
-      if (pointSourceBuffer3 != null)
-        pointSourceBuffer3.Release();
       if (indexBuffer != null)
         indexBuffer.Release();
       if (rotateToCameraMat != null)
         rotateToCameraMat.Release();
+
+      for (int i = 0; i < pointSourceBuffers.Length; i++)
+        if(pointSourceBuffers[i] != null)
+          pointSourceBuffers[i].Release();
 
       if (pcMeshFilter != null)
         if (pcMeshFilter.sharedMesh == null)
@@ -412,7 +382,6 @@ namespace BuildingVolumes.Player
 
         vNormals[i] = new Vector3(xNor, yNor, zNor);
         byteAdress += 12;
-        byteAdress += 16; // For tangents
 
         vColors[i] = BitConverter.ToUInt32(vertexBufferData, byteAdress);
         byteAdress += 4;

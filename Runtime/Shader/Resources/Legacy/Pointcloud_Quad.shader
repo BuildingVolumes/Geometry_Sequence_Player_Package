@@ -1,4 +1,4 @@
-Shader "Unlit/Pointcloud_Quad"
+Shader "Pointclouds/Pointcloud_Quad"
 {
     Properties
     {

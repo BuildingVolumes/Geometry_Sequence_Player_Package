@@ -1,16 +1,19 @@
-#pragma kernel CreatePointcloudFromBuffer1
-#pragma kernel CreatePointcloudFromBuffer2
-#pragma kernel CreatePointcloudFromBuffer3
+#pragma kernel CreatePointcloudBuffer0
+#pragma kernel CreatePointcloudBuffer1
+#pragma kernel CreatePointcloudBuffer2
+#pragma kernel CreatePointcloudWithNormalsBuffer0
+#pragma kernel CreatePointcloudWithNormalsBuffer1
+#pragma kernel CreatePointcloudWithNormalsBuffer2
 
 //Contains the point cloud, from which we read the point position and colors
 //As Unity needs up to three frames to load data into a new buffer, we 
 //use a triple buffered swapchain
+ByteAddressBuffer _PointSourceBuffer0;
 ByteAddressBuffer _PointSourceBuffer1;
 ByteAddressBuffer _PointSourceBuffer2;
-ByteAddressBuffer _PointSourceBuffer3;
+int _PointCount0;
 int _PointCount1;
 int _PointCount2;
-int _PointCount3;
 
 //Contains the vertice positions and colors of the quads we create
 RWByteAddressBuffer _VertexBuffer;
@@ -143,10 +146,7 @@ float3 GetPositionFromPointSourceBuffer(int id, ByteAddressBuffer buffer)
 // Get the 32bit uint from the buffer that contains the colors in RGBA format
 uint GetColorFromPointSourceBuffer(int id, ByteAddressBuffer buffer)
 {
-    int offset = 12;
-    if(_HasNormals)
-        offset = 24;
-    
+    int offset = _HasNormals ? 24 : 12;    
     uint pointIndex = id.x * _BufferStride + offset;
     return buffer.Load(pointIndex);
 }
@@ -155,9 +155,7 @@ float3 GetNormalFromPointSourceBuffer(int id, ByteAddressBuffer buffer)
 {    
     uint normalIndex = id.x * _BufferStride + 12;
     uint3 normalRaw = buffer.Load3(normalIndex);
-    float3 normal = asfloat(normal);
-    normal = float3(0, 0, 1);
-    return normal;
+    return asfloat(normalRaw);
 }
 
 _PointQuad ApplyPosition(_PointQuad quad, uint id, ByteAddressBuffer sourceBuffer)
@@ -204,10 +202,7 @@ _PointQuad ApplyRotation(_PointQuad quad, float4x4 rotationMat)
 
 _PointQuad ApplyNormal(_PointQuad quad, uint3 id, ByteAddressBuffer sourceBuffer)
 {
-    if (_HasNormals)
-    {
-        quad.vertexNormal = GetNormalFromPointSourceBuffer(id.x, sourceBuffer);
-    }
+    quad.vertexNormal = GetNormalFromPointSourceBuffer(id.x, sourceBuffer);
     return quad;
 }
 
@@ -278,47 +273,81 @@ void StoreQuad(_PointQuad quad, uint id)
     StoreQuadIndicesData(quad.triangle2, id, 1);
 }
 
+_PointQuad ApplyDataToQuad(uint id, _PointQuad quad, ByteAddressBuffer buffer)
+{
+    quad = CreateQuad(id, _PointScale);
+    quad = ApplyRotation(quad, _RotateToCamera[0]);
+    quad = ApplyPosition(quad, id, buffer);
+    quad = ApplyColor(quad, id, buffer);
+    return quad;
+}
+
 void CreatePointcloud(uint3 id, ByteAddressBuffer buffer, int pointCount)
 {    
     _PointQuad quad;
     
     if (id.x < (uint) pointCount) //If this point is visible this frame, fill it
-    {
-        quad = CreateQuad(id.x, _PointScale);
-        quad = ApplyRotation(quad, _RotateToCamera[0]);
-        quad = ApplyPosition(quad, id.x, buffer);
-        quad = ApplyColor(quad, id, buffer);
-        quad = ApplyNormal(quad, id, buffer);
-    }
+        quad = ApplyDataToQuad(id.x, quad, buffer);
     else
-    {
         quad = InitializeEmptyQuad();
-    }
     
     StoreQuad(quad, id.x);
-    
 }
+
+void CreatePointcloudWithNormal(uint3 id, ByteAddressBuffer buffer, int pointCount)
+{
+    _PointQuad quad;
+    
+    if (id.x < (uint) pointCount)
+    {
+        quad = ApplyDataToQuad(id.x, quad, buffer);
+        quad = ApplyNormal(quad, id, buffer);
+    }
+    
+    else
+        quad = InitializeEmptyQuad();
+    
+        StoreQuad(quad, id.x);
+    }
 
 
 // For the triple buffered swapchain to work, the script that request the compute shader
 // calls these functions in a loop (1-2-3-1-2-3-1...) 
 
 [numthreads(128, 1, 1)]
-void CreatePointcloudFromBuffer1(uint3 id : SV_DispatchThreadID)
+void CreatePointcloudBuffer0(uint3 id : SV_DispatchThreadID)
+{
+    CreatePointcloud(id, _PointSourceBuffer0, _PointCount0);
+}
+
+[numthreads(128, 1, 1)]
+void CreatePointcloudBuffer1(uint3 id : SV_DispatchThreadID)
 {
     CreatePointcloud(id, _PointSourceBuffer1, _PointCount1);
 }
 
 [numthreads(128, 1, 1)]
-void CreatePointcloudFromBuffer2(uint3 id : SV_DispatchThreadID)
+void CreatePointcloudBuffer2(uint3 id : SV_DispatchThreadID)
 {
     CreatePointcloud(id, _PointSourceBuffer2, _PointCount2);
 }
 
 [numthreads(128, 1, 1)]
-void CreatePointcloudFromBuffer3(uint3 id : SV_DispatchThreadID)
+void CreatePointcloudWithNormalsBuffer0(uint3 id : SV_DispatchThreadID)
 {
-    CreatePointcloud(id, _PointSourceBuffer3, _PointCount3);
+    CreatePointcloudWithNormal(id, _PointSourceBuffer0, _PointCount0);
+}
+
+[numthreads(128, 1, 1)]
+void CreatePointcloudWithNormalsBuffer1(uint3 id : SV_DispatchThreadID)
+{
+    CreatePointcloudWithNormal(id, _PointSourceBuffer1, _PointCount1);
+}
+
+[numthreads(128, 1, 1)]
+void CreatePointcloudWithNormalsBuffer2(uint3 id : SV_DispatchThreadID)
+{
+    CreatePointcloudWithNormal(id, _PointSourceBuffer2, _PointCount2);
 }
 
 

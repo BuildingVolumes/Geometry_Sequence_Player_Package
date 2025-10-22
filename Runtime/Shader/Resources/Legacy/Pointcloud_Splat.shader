@@ -1,4 +1,4 @@
-Shader "Unlit/Pointcloud_Splat"
+Shader "Pointclouds/Pointcloud_Splat"
 {
     Properties
     {

@@ -1,6 +1,7 @@
 #pragma kernel PointsToRT
 
 RWTexture2D<float4> _RTPositions;
+RWTexture2D<float4> _RTNormals;
 RWTexture2D<float4> _RTColors;
 
 //Contains the point cloud, from which we read the point position and colors
