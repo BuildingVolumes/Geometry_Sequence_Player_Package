@@ -47,7 +47,6 @@ namespace BuildingVolumes.Player
     static readonly int indexBufferID = Shader.PropertyToID("_IndexBuffer");
     static readonly int rotateToCameraID = Shader.PropertyToID("_RotateToCamera");
     static readonly int pointScaleID = Shader.PropertyToID("_PointScale");
-    static readonly int hasNormalsID = Shader.PropertyToID("_HasNormals");
     static readonly int bufferStrideID = Shader.PropertyToID("_BufferStride");
     static readonly string pointCountProperty = "_PointCount";
     static readonly string pointSourceBufferProperty = "_PointSourceBuffer";
@@ -122,7 +121,6 @@ namespace BuildingVolumes.Player
       vertexBuffer = pcMesh.GetVertexBuffer(0);
       indexBuffer = pcMesh.GetIndexBuffer();
 
-      computeShader.SetBool(hasNormalsID, configuration.hasNormals);
       computeShader.SetInt(bufferStrideID, byteStride);
 
       for (int i = 0; i < pointSourceBuffers.Length; i++)

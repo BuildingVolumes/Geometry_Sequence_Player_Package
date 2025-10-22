@@ -30,8 +30,12 @@ float _PointScale;
 //Size of one point in the source buffery in bytes
 float _BufferStride;
 
-//If custom normals should be loaded from the point source buffer
-bool _HasNormals;
+//The sizes of the vertex attributes in bytes
+//Consists out of:  3 floats per vertice posiion + 1 uint for color + 2 floats per UV + optionally 3 floats per normal
+static const uint positionSize = 3 * 4;
+static const uint colorSize = 1 * 4;
+static const uint uvSize = 2 * 4;
+static const uint normalSize = 3 * 4;
 
 //Just a simple quad mesh
 struct _PointQuad
@@ -144,16 +148,16 @@ float3 GetPositionFromPointSourceBuffer(int id, ByteAddressBuffer buffer)
 }
 
 // Get the 32bit uint from the buffer that contains the colors in RGBA format
-uint GetColorFromPointSourceBuffer(int id, ByteAddressBuffer buffer)
+uint GetColorFromPointSourceBuffer(uint id, ByteAddressBuffer buffer, bool hasNormals)
 {
-    int offset = _HasNormals ? 24 : 12;    
-    uint pointIndex = id.x * _BufferStride + offset;
+    int offset = hasNormals ? 24 : 12;    
+    uint pointIndex = id * _BufferStride + offset;
     return buffer.Load(pointIndex);
 }
 
-float3 GetNormalFromPointSourceBuffer(int id, ByteAddressBuffer buffer)
+float3 GetNormalFromPointSourceBuffer(uint id, ByteAddressBuffer buffer)
 {    
-    uint normalIndex = id.x * _BufferStride + 12;
+    uint normalIndex = id * _BufferStride + 12;
     uint3 normalRaw = buffer.Load3(normalIndex);
     return asfloat(normalRaw);
 }
@@ -200,50 +204,26 @@ _PointQuad ApplyRotation(_PointQuad quad, float4x4 rotationMat)
     return quad;
 }
 
-_PointQuad ApplyNormal(_PointQuad quad, uint3 id, ByteAddressBuffer sourceBuffer)
+_PointQuad ApplyNormal(_PointQuad quad, uint id, ByteAddressBuffer sourceBuffer)
 {
-    quad.vertexNormal = GetNormalFromPointSourceBuffer(id.x, sourceBuffer);
+    quad.vertexNormal = GetNormalFromPointSourceBuffer(id, sourceBuffer);
     return quad;
 }
 
-_PointQuad ApplyColor(_PointQuad quad, uint3 id, ByteAddressBuffer sourceBuffer)
+_PointQuad ApplyColor(_PointQuad quad, uint id, ByteAddressBuffer sourceBuffer, bool hasNormals)
 {
-    quad.color = GetColorFromPointSourceBuffer(id.x, sourceBuffer);
+    quad.color = GetColorFromPointSourceBuffer(id, sourceBuffer, hasNormals);
     return quad;
 }
 
-void StoreQuadVertexData(float3 pos, uint col, float2 uv, float3 norm, uint id, int quadVertexIndex)
+void StorePosColUVs(uint adress, float3 pos, uint col, float2 uv, bool hasNormals)
 {
-    //The vertex size for a quad consists out of:  3 floats per vertice posiion + 1 uint for color + 2 floats per UV + optionally 3 floats per normal
-    uint positionSize = 3 * 4;
-    uint colorSize = 1 * 4;
-    uint uvSize = 2 * 4;
-    uint normalSize = 3 * 4;
-
-    uint vertexSize = positionSize + colorSize + uvSize;
-    if (_HasNormals)
-    {
-        vertexSize += normalSize;
-    }
-    
-    //To get the adress where we store our vertex, we multiply it with the global quad index (id) times 4 (vertices per quad) and add the vertex 
-    //sizes from the quad vertex index
-    uint vBufferPos = vertexSize * id * 4;
-    vBufferPos += quadVertexIndex * vertexSize;
-    
-    //Finally, store the data as uints int the output buffer.
-    int adress = vBufferPos;
-    
     //Positions
     _VertexBuffer.Store3(adress, asuint(pos));
     adress += positionSize;
     
-    //Normals
-    if (_HasNormals)
-    {
-        _VertexBuffer.Store3(adress, asuint(norm));
+    if (hasNormals)
         adress += normalSize;
-    }
     
     //Colors
     _VertexBuffer.Store(adress, asuint(col));
@@ -251,6 +231,31 @@ void StoreQuadVertexData(float3 pos, uint col, float2 uv, float3 norm, uint id, 
     
     //UVs
     _VertexBuffer.Store2(adress, asuint(uv));
+}
+
+void StoreNormals(uint adress, float3 normal)
+{
+    _VertexBuffer.Store3(adress, asuint(normal));
+}
+
+void StoreQuadVertexData(float3 pos, uint col, float2 uv, uint id, int quadVertexIndex)
+{ 
+    uint vertexSize = positionSize + colorSize + uvSize;
+    uint vBufferPos = vertexSize * id * 4;
+    vBufferPos += quadVertexIndex * vertexSize;
+    uint adress = vBufferPos;
+    
+    StorePosColUVs(vBufferPos, pos, col, uv, false);    
+}
+
+void StoreQuadVertexDataWithNormals(float3 pos, uint col, float2 uv, float3 norm, uint id, int quadVertexIndex)
+{
+    uint vertexSize = positionSize + normalSize + colorSize + uvSize;
+    uint vBufferPos = vertexSize * id * 4;
+    vBufferPos += quadVertexIndex * vertexSize;
+    
+    StorePosColUVs(vBufferPos, pos, col, uv, true);
+    StoreNormals(vBufferPos + positionSize, norm);
 }
 
 void StoreQuadIndicesData(uint3 face, uint id, int faceIndex)
@@ -264,21 +269,31 @@ void StoreQuadIndicesData(uint3 face, uint id, int faceIndex)
 // Write a quad to the output buffer that contains the mesh
 void StoreQuad(_PointQuad quad, uint id)
 {
-    StoreQuadVertexData(quad.vertexPosition1, quad.color, quad.uv1, quad.vertexNormal, id, 0);
-    StoreQuadVertexData(quad.vertexPosition2, quad.color, quad.uv2, quad.vertexNormal, id, 1);
-    StoreQuadVertexData(quad.vertexPosition3, quad.color, quad.uv3, quad.vertexNormal, id, 2);
-    StoreQuadVertexData(quad.vertexPosition4, quad.color, quad.uv4, quad.vertexNormal, id, 3);
+    StoreQuadVertexData(quad.vertexPosition1, quad.color, quad.uv1, id, 0);
+    StoreQuadVertexData(quad.vertexPosition2, quad.color, quad.uv2, id, 1);
+    StoreQuadVertexData(quad.vertexPosition3, quad.color, quad.uv3, id, 2);
+    StoreQuadVertexData(quad.vertexPosition4, quad.color, quad.uv4, id, 3);
 
     StoreQuadIndicesData(quad.triangle1, id, 0);
     StoreQuadIndicesData(quad.triangle2, id, 1);
 }
 
-_PointQuad ApplyDataToQuad(uint id, _PointQuad quad, ByteAddressBuffer buffer)
+void StoreQuadWithNormals(_PointQuad quad, uint id)
+{
+    StoreQuadVertexDataWithNormals(quad.vertexPosition1, quad.color, quad.uv1, quad.vertexNormal, id, 0);
+    StoreQuadVertexDataWithNormals(quad.vertexPosition2, quad.color, quad.uv2, quad.vertexNormal, id, 1);
+    StoreQuadVertexDataWithNormals(quad.vertexPosition3, quad.color, quad.uv3, quad.vertexNormal, id, 2);
+    StoreQuadVertexDataWithNormals(quad.vertexPosition4, quad.color, quad.uv4, quad.vertexNormal, id, 3);
+
+    StoreQuadIndicesData(quad.triangle1, id, 0);
+    StoreQuadIndicesData(quad.triangle2, id, 1);
+}
+
+_PointQuad ApplyTransformToQuad(uint id, _PointQuad quad, ByteAddressBuffer buffer)
 {
     quad = CreateQuad(id, _PointScale);
     quad = ApplyRotation(quad, _RotateToCamera[0]);
     quad = ApplyPosition(quad, id, buffer);
-    quad = ApplyColor(quad, id, buffer);
     return quad;
 }
 
@@ -287,11 +302,16 @@ void CreatePointcloud(uint3 id, ByteAddressBuffer buffer, int pointCount)
     _PointQuad quad;
     
     if (id.x < (uint) pointCount) //If this point is visible this frame, fill it
-        quad = ApplyDataToQuad(id.x, quad, buffer);
+    {
+        quad = ApplyTransformToQuad(id.x, quad, buffer);
+        quad = ApplyColor(quad, id.x, buffer, false);
+    }
+        
     else
-        quad = InitializeEmptyQuad();
+        quad = InitializeEmptyQuad(); 
     
     StoreQuad(quad, id.x);
+    
 }
 
 void CreatePointcloudWithNormal(uint3 id, ByteAddressBuffer buffer, int pointCount)
@@ -300,15 +320,16 @@ void CreatePointcloudWithNormal(uint3 id, ByteAddressBuffer buffer, int pointCou
     
     if (id.x < (uint) pointCount)
     {
-        quad = ApplyDataToQuad(id.x, quad, buffer);
-        quad = ApplyNormal(quad, id, buffer);
+        quad = ApplyTransformToQuad(id.x, quad, buffer);
+        quad = ApplyNormal(quad, id.x, buffer);
+        quad = ApplyColor(quad, id.x, buffer, true);
     }
     
     else
         quad = InitializeEmptyQuad();
     
-        StoreQuad(quad, id.x);
-    }
+    StoreQuadWithNormals(quad, id.x);
+}
 
 
 // For the triple buffered swapchain to work, the script that request the compute shader
