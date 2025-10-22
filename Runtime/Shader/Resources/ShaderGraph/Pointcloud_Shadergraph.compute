@@ -1,4 +1,5 @@
 #pragma kernel PointsToRT
+#pragma kernel PointsWithNormalsToRT
 
 RWTexture2D<float4> _RTPositions;
 RWTexture2D<float4> _RTNormals;
@@ -8,29 +9,38 @@ RWTexture2D<float4> _RTColors;
 ByteAddressBuffer _PointSourceBuffer;
 int _PointCount;
 int _RTStride;
+int _SourceStride;
 
 float4 GetPositionFromPointSourceBuffer(int id)
 {
     //We access the raw vertex buffer of the mesh vertices. As this buffer is raw, we don't have a handy struct to navigate it
 	//and need to find the memory addresses ourselves. Luckily, we create the mesh ourselves, so we know that we have:
 	//Vertex = float3 position (3 floats) + unorm8 vertexcolor (1 uint) = 4 * 4 bytes per vertex
-    uint pointIndex = id * 4 * 4;
-
-	//All values in the Raw vertex buffer can only be retrieved as ints
-    uint3 positionRaw = _PointSourceBuffer.Load3(pointIndex);
-
-    float4 position = float4(asfloat(positionRaw.x), asfloat(positionRaw.y), asfloat(positionRaw.z), 1.0); 
-
-	//Reinterpret the int position into floats
+    uint adress = id * _SourceStride;
+    
+	//All values in the Raw vertex buffer can only be retrieved as ints, so we need to convert it to a float4
+    uint3 positionRaw = _PointSourceBuffer.Load3(adress);
+    float4 position = float4(asfloat(positionRaw.x), asfloat(positionRaw.y), asfloat(positionRaw.z), 0.0); 
     return position;
 }
 
-float4 GetColorFromPointSourceBuffer(int id)
+float4 GetNormalsFromPointSourceBuffer(int id)
 {
-    uint pointIndex = id * 4 * 4 + 12;
-    int colorUInt = _PointSourceBuffer.Load(pointIndex);
+    uint adress = id * _SourceStride + 12;
+    
+	//All values in the Raw vertex buffer can only be retrieved as ints, so we need to convert it to a float4
+    uint3 normalsRaw = _PointSourceBuffer.Load3(adress);
+    float4 normals = float4(asfloat(normalsRaw.x), asfloat(normalsRaw.y), asfloat(normalsRaw.z), 0.0);
+    return normals;
+}
+
+float4 GetColorFromPointSourceBuffer(int id, bool hasNormals)
+{
+    uint adress = id * _SourceStride + (hasNormals ? 24 : 12);
+    int colorUInt = _PointSourceBuffer.Load(adress);
     
     //The color is stored as four bytes in a 32-bit int. We unpack this int here and convert the values to float values.
+    //It's important that the alpha is a one, otherwise the point will be discarded
     float4 rgba = float4(0.0, 0.0, 0.0, 1.0);
     rgba.r = float((colorUInt) & 0xff) / 255.0;
     rgba.b = float((colorUInt >> 16) & 0xff) / 255.0;
@@ -46,13 +56,26 @@ void PointsToRT (uint3 id : SV_DispatchThreadID)
     {
         //Write positions and colors into rendertextures
         _RTPositions[id.xy] = GetPositionFromPointSourceBuffer(id.x + (id.y * _RTStride));
-        _RTColors[id.xy] = GetColorFromPointSourceBuffer(id.x + (id.y * _RTStride));
+        _RTColors[id.xy] = GetColorFromPointSourceBuffer(id.x + (id.y * _RTStride), false);
     }
     
     //Mark the leftover points as invalid   
     else
-        _RTColors[id.xy] = float4(0,0,0,0);
+        _RTColors[id.xy] = float4(0,0,0,0);   
+}
 
+[numthreads(32, 32, 1)]
+void PointsWithNormalsToRT(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x + (id.y * _RTStride) < (uint) _PointCount)
+    {
+        //Write positions and colors into rendertextures
+        _RTPositions[id.xy] = GetPositionFromPointSourceBuffer(id.x + (id.y * _RTStride));
+        _RTColors[id.xy] = GetColorFromPointSourceBuffer(id.x + (id.y * _RTStride), true);
+        _RTNormals[id.xy] = GetNormalsFromPointSourceBuffer(id.x + (id.y * _RTStride));
+    }
     
-    
+    //Mark the leftover points as invalid   
+    else
+        _RTColors[id.xy] = float4(0, 0, 0, 0);
 }

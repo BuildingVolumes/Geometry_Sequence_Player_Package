@@ -13,10 +13,14 @@ namespace BuildingVolumes.Player
   {
     ComputeShader computeShaderRT;
     RenderTexture rtPositions;
+    RenderTexture rtNormals;
     RenderTexture rtColors;
     int rtResolution;
 
-    GraphicsBuffer pointSourceBuffer;
+    //Triple buffering neccessary, as not all dispatches are guranteed
+    //to perform in one frame
+    GraphicsBuffer[] pointSourceBuffers = new GraphicsBuffer[3];
+    int bufferIndex = 0;
 
     GameObject pcObject;
     MeshFilter pcMeshFilter;
@@ -30,14 +34,18 @@ namespace BuildingVolumes.Player
 
     //Compute shader property IDs
     static readonly int pointSourceBufferID = Shader.PropertyToID("_PointSourceBuffer");
+    static readonly int pointSourceStrideID = Shader.PropertyToID("_SourceStride");
     static readonly int pointCountID = Shader.PropertyToID("_PointCount");
     static readonly int rtPositionsID = Shader.PropertyToID("_RTPositions");
     static readonly int rtColorsID = Shader.PropertyToID("_RTColors");
+    static readonly int rtNormalsID = Shader.PropertyToID("_RTNormals");
     static readonly int rtStrideID = Shader.PropertyToID("_RTStride");
+    static readonly int rtNormalsEnabledID = Shader.PropertyToID("_RTHasNormals");
 
     //Vertex/Fragment shader property IDs
     static readonly int rtResolutionID = Shader.PropertyToID("_RTResolution");
     static readonly int rtPositionSourceID = Shader.PropertyToID("_PositionSourceRT");
+    static readonly int rtNormalSourceID = Shader.PropertyToID("_NormalSourceRT");
     static readonly int rtColorSourceID = Shader.PropertyToID("_ColorSourceRT");
     static readonly int pointScaleID = Shader.PropertyToID("_PointScale");
     static readonly int pointEmissionID = Shader.PropertyToID("_PointEmission");
@@ -72,19 +80,37 @@ namespace BuildingVolumes.Player
       rtColors.filterMode = FilterMode.Point;
       rtColors.Create();
 
+      //Optional Render Texture for storing normals
+      if (configuration.hasNormals)
+      {
+        rtNormals = new RenderTexture(rtResolution, rtResolution, 0, UnityEngine.Experimental.Rendering.GraphicsFormat.R16G16B16A16_SFloat);
+        rtNormals.enableRandomWrite = true;
+        rtNormals.filterMode = FilterMode.Point;
+        rtNormals.Create();
+      }
+
       //Create the buffer where all the raw point data will be stored
       int textureSize = rtPositions.width * rtPositions.height;
-      pointSourceBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Raw, GraphicsBuffer.UsageFlags.LockBufferForWrite, textureSize, 4 * 4);
+      int stride = configuration.hasNormals ? 4 * 7 : 4 * 4;
 
+      for (int i = 0; i < pointSourceBuffers.Length; i++)
+      {
+        pointSourceBuffers[i] = new GraphicsBuffer(GraphicsBuffer.Target.Raw, GraphicsBuffer.UsageFlags.LockBufferForWrite, textureSize, stride);
+      }
+
+      int kernel = configuration.hasNormals ? 1 : 0;
       computeShaderRT.SetInt(rtStrideID, rtResolution);
-      computeShaderRT.SetBuffer(0, pointSourceBufferID, pointSourceBuffer);
-      computeShaderRT.SetTexture(0, rtPositionsID, rtPositions);
-      computeShaderRT.SetTexture(0, rtColorsID, rtColors);
+      computeShaderRT.SetInt(pointSourceStrideID, stride);
+      computeShaderRT.SetBool(rtNormalsEnabledID, configuration.hasNormals);
+      computeShaderRT.SetTexture(kernel, rtPositionsID, rtPositions);
+      computeShaderRT.SetTexture(kernel, rtColorsID, rtColors);
+      if (configuration.hasNormals)
+        computeShaderRT.SetTexture(kernel, rtNormalsID, rtNormals);
 
       //Create the pointcloud mesh with n points
       pcObject = MeshCreation(configuration);
 
-      SetPointcloudMaterial(pointMaterial, pointSize, pointEmission, instantiateMaterial);
+      SetPointcloudMaterial(pointMaterial, pointSize, pointEmission, instantiateMaterial, configuration.hasNormals);
     }
 
     /// <summary>
@@ -120,6 +146,8 @@ namespace BuildingVolumes.Player
       Vector3 vertice3 = new Vector3(0.5f, -0.5f, 0f);
       Vector3 vertice4 = new Vector3(-0.5f, -0.5f, 0f);
 
+      Vector3 normal = new Vector3(0, 0, 1);
+
       Vector2 uv1 = new Vector2(0, 1);
       Vector2 uv2 = new Vector2(1, 1);
       Vector2 uv3 = new Vector2(1, 0);
@@ -128,8 +156,11 @@ namespace BuildingVolumes.Player
       Mesh mesh = new Mesh();
 
       Vector3[] vertices = new Vector3[quadCount * 4];
+      Vector3[] normals = new Vector3[1];
       Vector2[] uvs = new Vector2[quadCount * 4];
       int[] indices = new int[quadCount * 6];
+      if (config.hasNormals)
+        normals = new Vector3[quadCount * 4];
 
       for (int i = 0; i < quadCount; i++)
       {
@@ -142,6 +173,14 @@ namespace BuildingVolumes.Player
         uvs[i * 4 + 1] = uv2;
         uvs[i * 4 + 2] = uv3;
         uvs[i * 4 + 3] = uv4;
+
+        if(config.hasNormals)
+        {
+          normals[i * 4 + 0] = normal;
+          normals[i * 4 + 1] = normal;
+          normals[i * 4 + 2] = normal;
+          normals[i * 4 + 3] = normal;
+        }
 
         indices[i * 6 + 0] = i * 4 + 0;
         indices[i * 6 + 1] = i * 4 + 1;
@@ -158,6 +197,9 @@ namespace BuildingVolumes.Player
       mesh.triangles = indices;
       mesh.SetUVs(0, uvs);
       mesh.bounds = config.GetBounds();
+      if(config.hasNormals)
+        mesh.normals = normals;
+
       pcMeshFilter.sharedMesh = mesh;
 
       return pcObject;
@@ -174,13 +216,20 @@ namespace BuildingVolumes.Player
       if (!ready)
         return;
 
+      bufferIndex++;
+      if (bufferIndex >= 3)
+        bufferIndex = 0;
+
       frame.geoJobHandle.Complete();
-      NativeArray<byte> pointdataGPU = pointSourceBuffer.LockBufferForWrite<byte>(0, frame.geoJob.vertexBuffer.Length); //Locking buffer is faster than GraphicsBuffer.SetData;
+      NativeArray<byte> pointdataGPU = pointSourceBuffers[bufferIndex].LockBufferForWrite<byte>(0, frame.geoJob.vertexBuffer.Length); //Locking buffer is faster than GraphicsBuffer.SetData;
       frame.geoJob.vertexBuffer.CopyTo(pointdataGPU);
-      pointSourceBuffer.UnlockBufferAfterWrite<byte>(frame.geoJob.vertexBuffer.Length);
+      pointSourceBuffers[bufferIndex].UnlockBufferAfterWrite<byte>(frame.geoJob.vertexBuffer.Length);
       computeShaderRT.SetInt(pointCountID, frame.geoJob.vertexCount);
+
       int groupSize = Mathf.CeilToInt(rtPositions.width / 32f);
-      computeShaderRT.Dispatch(0, groupSize, groupSize, 1);
+      int kernel = frame.sequenceConfiguration.hasNormals ? 1 : 0;
+      computeShaderRT.SetBuffer(kernel, pointSourceBufferID, pointSourceBuffers[bufferIndex]);
+      computeShaderRT.Dispatch(kernel, groupSize, groupSize, 1);
     }
 
 
@@ -191,8 +240,13 @@ namespace BuildingVolumes.Player
 
     public void SetPointcloudMaterial(Material mat, float pointSize, float pointEmission, bool instantiateMaterial)
     {
+      SetPointcloudMaterial(mat, pointSize, pointEmission, instantiateMaterial);
+    }
+
+    public void SetPointcloudMaterial(Material mat, float pointSize, float pointEmission, bool instantiateMaterial, bool hasNormals = false)
+    {
       if (!mat)
-        mat = LoadDefaultMaterial();
+        mat = LoadDefaultMaterial(hasNormals);
 
       currentPointcloudMaterial = mat;
       currentPointSize = pointSize;
@@ -207,6 +261,8 @@ namespace BuildingVolumes.Player
       newMat.SetFloat(rtResolutionID, rtResolution);
       newMat.SetTexture(rtPositionSourceID, rtPositions);
       newMat.SetTexture(rtColorSourceID, rtColors);
+      if(hasNormals)
+        newMat.SetTexture(rtNormalSourceID, rtNormals);
 
       if (newMat.HasFloat(pointScaleID))
         newMat.SetFloat(pointScaleID, pointSize);
@@ -241,14 +297,19 @@ namespace BuildingVolumes.Player
       return newStreamObject;
     }
 
-    public Material LoadDefaultMaterial()
+    public Material LoadDefaultMaterial(bool hasNormals)
     {
-      Material pointcloudDefaultMaterial = new Material(Resources.Load("ShaderGraph/Pointcloud_Circles_Shadergraph", typeof(Material)) as Material);
+      Material mat;
 
-      if (pointcloudDefaultMaterial == null)
+      if(hasNormals)
+        mat = new Material(Resources.Load("ShaderGraph/Pointcloud_Circles_Lit_Shadergraph", typeof(Material)) as Material);
+      else
+        mat = new Material(Resources.Load("ShaderGraph/Pointcloud_Circles_Shadergraph", typeof(Material)) as Material);
+
+      if (mat == null)
         UnityEngine.Debug.LogError("Pointcloud Quads material (Polyspatial) could not be loaded!");
 
-      return pointcloudDefaultMaterial;
+      return mat;
     }
 
     public void SetPointSize(float size)
@@ -275,8 +336,14 @@ namespace BuildingVolumes.Player
         DestroyImmediate(rtPositions);
       if (rtColors != null)
         DestroyImmediate(rtColors);
-      if (pointSourceBuffer != null)
-        pointSourceBuffer.Dispose();
+      if (rtNormals != null)
+        DestroyImmediate(rtNormals);
+      for (int i = 0; i < pointSourceBuffers.Length; i++)
+      {
+        if (pointSourceBuffers[i] != null)
+          pointSourceBuffers[i].Dispose();
+      }
+
       if (pcObject != null)
         DestroyImmediate(pcObject);
     }
