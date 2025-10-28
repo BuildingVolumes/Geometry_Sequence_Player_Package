@@ -71,9 +71,9 @@ namespace BuildingVolumes.Player
     public Bounds GetBounds()
     {
       Vector3 center = Vector3.zero;
-      center.x = maxBounds[0] + maxBounds[3];
-      center.y = maxBounds[1] + maxBounds[4];
-      center.z = maxBounds[2] + maxBounds[5];
+      center.x = (maxBounds[0] + maxBounds[3]) / 2;
+      center.y = (maxBounds[1] + maxBounds[4]) / 2;
+      center.z = (maxBounds[2] + maxBounds[5]) / 2;
 
       Vector3 size = Vector3.zero;
       size.x = Mathf.Abs(maxBounds[0]) + Mathf.Abs(maxBounds[3]);
