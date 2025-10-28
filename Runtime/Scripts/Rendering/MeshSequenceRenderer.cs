@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using Unity.Collections;
 using UnityEngine.Rendering;
 using UnityEngine;
 
@@ -6,7 +8,6 @@ namespace BuildingVolumes.Player
 {
   public class MeshSequenceRenderer : MonoBehaviour, IMeshSequenceRenderer
   {
-    GameObject streamedMeshParent;
     GameObject streamedMeshObject;
     MeshFilter streamedMeshFilter;
     MeshRenderer streamedMeshRenderer;
@@ -14,6 +15,7 @@ namespace BuildingVolumes.Player
 
     Material meshMaterial;
     bool textured;
+    bool isDisposed;
 
     private void Awake()
     {
@@ -24,29 +26,27 @@ namespace BuildingVolumes.Player
     public bool Setup(Transform parent, SequenceConfiguration config)
     {
       Dispose();
+      isDisposed = false;
 
-      string name = "MeshSequence";
-#if UNITY_EDITOR
-      if (!Application.isPlaying)
-        name = "Thumbnail";
-#endif
-
-      streamedMeshParent = CreateStreamObject(name, parent);
-      streamedMeshObject = CreateStreamObject("MeshRenderer", streamedMeshParent.transform);
+      streamedMeshObject = CreateStreamObject("MeshRenderer", this.transform);
       ConfigureMeshRenderer(streamedMeshObject, config, true, out streamedMeshRenderer, out streamedMeshFilter, out streamedMeshTexture);
 
-      ChangeMaterial(meshMaterial, true);
+      ChangeMaterial(meshMaterial, GeometrySequenceStream.MaterialProperties.Albedo, null, true, config.hasNormals);
 
       if (config.textureMode == SequenceConfiguration.TextureMode.None)
         textured = false;
       else
         textured = true;
 
+
       return true;
     }
 
     public void RenderFrame(Frame frame)
     {
+      if (isDisposed)
+        return;
+
       ShowGeometryData(frame, streamedMeshFilter);
 
       if (textured)
@@ -58,20 +58,25 @@ namespace BuildingVolumes.Player
       frame.geoJobHandle.Complete();
 
       VertexAttributeDescriptor vp = new VertexAttributeDescriptor(VertexAttribute.Position, VertexAttributeFormat.Float32, 3);
+      VertexAttributeDescriptor vn = new VertexAttributeDescriptor(VertexAttribute.Normal, VertexAttributeFormat.Float32, 3);
       VertexAttributeDescriptor vt = new VertexAttributeDescriptor(VertexAttribute.TexCoord0, VertexAttributeFormat.Float32, 2);
 
-
+      List<VertexAttributeDescriptor> vad = new List<VertexAttributeDescriptor>();
+      vad.Add(vp);
+      if (frame.sequenceConfiguration.hasNormals)
+        vad.Add(vn);
       if (frame.sequenceConfiguration.hasUVs)
-        meshFilter.sharedMesh.SetVertexBufferParams(frame.sequenceConfiguration.maxVertexCount, vp, vt);
-      else
-        meshFilter.sharedMesh.SetVertexBufferParams(frame.sequenceConfiguration.maxVertexCount, vp);
+        vad.Add(vt);
 
-      meshFilter.sharedMesh.SetIndexBufferParams(frame.sequenceConfiguration.maxIndiceCount, IndexFormat.UInt32);
+      streamedMeshFilter.sharedMesh.SetVertexBufferParams(frame.sequenceConfiguration.maxVertexCount, vad.ToArray());
+      streamedMeshFilter.sharedMesh.SetIndexBufferParams(frame.sequenceConfiguration.maxIndiceCount, IndexFormat.UInt32);
 
       meshFilter.sharedMesh.SetVertexBufferData<byte>(frame.vertexBufferRaw, 0, 0, frame.vertexBufferRaw.Length);
       meshFilter.sharedMesh.SetIndexBufferData<byte>(frame.indiceBufferRaw, 0, 0, frame.indiceBufferRaw.Length);
       meshFilter.sharedMesh.SetSubMesh(0, new SubMeshDescriptor(0, frame.sequenceConfiguration.indiceCounts[frame.playbackIndex]), MeshUpdateFlags.DontRecalculateBounds);
-      meshFilter.sharedMesh.RecalculateNormals();
+
+      if(!frame.sequenceConfiguration.hasNormals)
+       meshFilter.sharedMesh.RecalculateNormals();
     }
 
     void ShowTextureData(Frame frame, Texture2D texture)
@@ -145,8 +150,16 @@ namespace BuildingVolumes.Player
 
     public void ChangeMaterial(Material material, GeometrySequenceStream.MaterialProperties properties, List<string> customProperties, bool instantiateMaterial)
     {
+      ChangeMaterial(material, properties, customProperties, instantiateMaterial, false);
+    }
+
+    public void ChangeMaterial(Material material, GeometrySequenceStream.MaterialProperties properties, List<string> customProperties, bool instantiateMaterial, bool hasNormals)
+    {
+      if (isDisposed)
+        return;
+
       if (material == null)
-        material = LoadDefaultMaterials();
+        material = LoadDefaultMaterials(hasNormals);
 
       Material newMat;
 
@@ -194,21 +207,27 @@ namespace BuildingVolumes.Player
 
     public void Show()
     {
+      if (isDisposed)
+        return;
+
       streamedMeshRenderer.enabled = true;
     }
     public void Hide()
     {
+      if (isDisposed)
+        return;
+
       streamedMeshRenderer.enabled = false;
     }
 
-    Material LoadDefaultMaterials()
+    Material LoadDefaultMaterials(bool hasNormals)
     {
       Material defaultMaterial;
-#if (!SHADERGRAPH_AVAILABLE)
-      defaultMaterial = Resources.Load("Legacy/Mesh_Unlit_Legacy", typeof(Material)) as Material;
-#else
-      defaultMaterial = Resources.Load("ShaderGraph/Unlit_Mesh", typeof(Material)) as Material;
-#endif
+
+      if(hasNormals)
+        defaultMaterial = Resources.Load("Legacy/Mesh_Lit_Legacy", typeof(Material)) as Material;
+      else
+        defaultMaterial = Resources.Load("Legacy/Mesh_Unlit_Legacy", typeof(Material)) as Material;
 
       return defaultMaterial;
 
@@ -227,14 +246,80 @@ namespace BuildingVolumes.Player
       if (streamedMeshObject != null)
         DestroyImmediate(streamedMeshObject);
 
+      isDisposed = true;
+    }
 
-      if (streamedMeshParent != null)
-        DestroyImmediate(streamedMeshParent);
+    public bool IsDisposed()
+    {
+      return isDisposed;
     }
 
     public void EndEditorLife()
     {
 
     }
+
+    #region DebugMeshBuffer
+
+    public void GetVertices()
+    {
+      GraphicsBuffer vertexBuffer = streamedMeshFilter.sharedMesh.GetVertexBuffer(0);
+      GraphicsBuffer indexBuffer = streamedMeshFilter.sharedMesh.GetIndexBuffer();
+
+      //VertexAttributeDescriptor va1 = pcMeshFilter.sharedMesh.GetVertexAttribute(0);
+      //VertexAttributeDescriptor va2 = pcMeshFilter.sharedMesh.GetVertexAttribute(1);
+      //VertexAttributeDescriptor va3 = pcMeshFilter.sharedMesh.GetVertexAttribute(2);
+
+      byte[] vertexBufferData = new byte[vertexBuffer.count * vertexBuffer.stride];
+      vertexBuffer.GetData(vertexBufferData);
+
+      byte[] indexBufferData = new byte[indexBuffer.count * indexBuffer.stride];
+      indexBuffer.GetData(indexBufferData);
+
+      uint[] indexBufferUint = new uint[indexBuffer.count];
+      for (int i = 0; i < indexBuffer.count; i++)
+      {
+        indexBufferUint[i] = BitConverter.ToUInt32(indexBufferData, i * 4);
+      }
+
+      Vector3[] vPositions = new Vector3[vertexBuffer.count];
+      Vector3[] vNormals = new Vector3[vertexBuffer.count];
+      Vector2[] vUVs = new Vector2[vertexBuffer.count];
+
+      int byteAdress = 0;
+
+      for (int i = 0; i < vertexBuffer.count; i++)
+      {
+        float xPos = BitConverter.ToSingle(vertexBufferData, byteAdress + 0);
+        float yPos = BitConverter.ToSingle(vertexBufferData, byteAdress + 4);
+        float zPos = BitConverter.ToSingle(vertexBufferData, byteAdress + 8);
+        vPositions[i] = new Vector3(xPos, yPos, zPos);
+        byteAdress += 12;
+
+        float xNor = BitConverter.ToSingle(vertexBufferData, byteAdress + 0);
+        float yNor = BitConverter.ToSingle(vertexBufferData, byteAdress + 4);
+        float zNor = BitConverter.ToSingle(vertexBufferData, byteAdress + 8);
+
+        vNormals[i] = new Vector3(xNor, yNor, zNor);
+        byteAdress += 12;
+
+        float texCoorU = BitConverter.ToSingle(vertexBufferData, byteAdress + 0);
+        float texCoorV = BitConverter.ToSingle(vertexBufferData, byteAdress + 4);
+        vUVs[i] = new Vector2(texCoorU, texCoorV);
+        byteAdress += 8;
+      }
+
+
+
+
+      //fTileMeshFilter.sharedMesh.SetVertexBufferData<byte>(vertexBufferData, 0, 0, vertexBufferData.Length);
+      //fTileMeshFilter.sharedMesh.SetIndexBufferData<byte>(indexBufferData, 0, 0, indexBufferData.Length);
+      //fTileMeshFilter.sharedMesh.UploadMeshData(false);
+
+      Debug.Log("Gottem");
+    }
+
+    #endregion
+
   }
 }

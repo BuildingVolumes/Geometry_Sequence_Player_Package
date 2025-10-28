@@ -17,6 +17,8 @@ namespace BuildingVolumes.Player
     int swapChainSize;
     int swapChainIndex;
 
+    bool isDisposed;
+
     private void Awake()
     {
       if (GetComponent<MeshRenderer>())
@@ -31,6 +33,7 @@ namespace BuildingVolumes.Player
     public bool Setup(Transform parent, SequenceConfiguration config, int swapChainSize = 3)
     {
       Dispose();
+      isDisposed = false;
 
       this.swapChainSize = swapChainSize;
       this.swapChainIndex = 0;
@@ -64,6 +67,7 @@ namespace BuildingVolumes.Player
         textured = false;
       else
         textured = true;
+
 
       return true;
     }
@@ -109,20 +113,25 @@ namespace BuildingVolumes.Player
       frame.geoJobHandle.Complete();
 
       VertexAttributeDescriptor vp = new VertexAttributeDescriptor(VertexAttribute.Position, VertexAttributeFormat.Float32, 3);
+      VertexAttributeDescriptor vn = new VertexAttributeDescriptor(VertexAttribute.Normal, VertexAttributeFormat.Float32, 3);
       VertexAttributeDescriptor vt = new VertexAttributeDescriptor(VertexAttribute.TexCoord0, VertexAttributeFormat.Float32, 2);
 
-
+      List<VertexAttributeDescriptor> vad = new List<VertexAttributeDescriptor>();
+      vad.Add(vp);
+      if (frame.sequenceConfiguration.hasNormals)
+        vad.Add(vn);
       if (frame.sequenceConfiguration.hasUVs)
-        meshFilter.sharedMesh.SetVertexBufferParams(frame.sequenceConfiguration.maxVertexCount, vp, vt);
-      else
-        meshFilter.sharedMesh.SetVertexBufferParams(frame.sequenceConfiguration.maxVertexCount, vp);
+        vad.Add(vt);
 
+      meshFilter.sharedMesh.SetVertexBufferParams(frame.sequenceConfiguration.maxVertexCount, vad.ToArray());
       meshFilter.sharedMesh.SetIndexBufferParams(frame.sequenceConfiguration.maxIndiceCount, IndexFormat.UInt32);
 
       meshFilter.sharedMesh.SetVertexBufferData<byte>(frame.vertexBufferRaw, 0, 0, frame.vertexBufferRaw.Length);
       meshFilter.sharedMesh.SetIndexBufferData<byte>(frame.indiceBufferRaw, 0, 0, frame.indiceBufferRaw.Length);
       meshFilter.sharedMesh.SetSubMesh(0, new SubMeshDescriptor(0, frame.sequenceConfiguration.indiceCounts[frame.playbackIndex]), MeshUpdateFlags.DontRecalculateBounds);
-      meshFilter.sharedMesh.RecalculateNormals();
+
+      if (!frame.sequenceConfiguration.hasNormals)
+        meshFilter.sharedMesh.RecalculateNormals();
     }
 
     void ShowTextureData(Frame frame, Texture2D texture)
@@ -267,7 +276,7 @@ namespace BuildingVolumes.Player
 
     Material LoadDefaultMaterials()
     {
-      Material newMat = Resources.Load("ShaderGraph/Unlit_Mesh") as Material;
+      Material newMat = Resources.Load("ShaderGraph/Unlit_Mesh", typeof(Material)) as Material;
       return newMat;
     }
 
@@ -307,6 +316,13 @@ namespace BuildingVolumes.Player
 
       if (streamedMeshParent != null)
         DestroyImmediate(streamedMeshParent);
+
+      isDisposed = true;
+    }
+
+    public bool IsDisposed()
+    {
+      return isDisposed;
     }
 
     public void EndEditorLife()

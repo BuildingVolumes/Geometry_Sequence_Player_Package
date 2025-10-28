@@ -15,6 +15,8 @@ namespace BuildingVolumes.Player
     public void Show();
     public void Hide();
     public void Dispose();
+
+    public bool IsDisposed();
   }
 }
 

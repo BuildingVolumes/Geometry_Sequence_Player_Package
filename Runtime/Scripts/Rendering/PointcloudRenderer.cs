@@ -1,5 +1,3 @@
-using GluonGui.WorkspaceWindow.Views.WorkspaceExplorer.Explorer;
-using Sirenix.Serialization;
 using System;
 using Unity.Collections;
 using UnityEditor;
@@ -42,6 +40,7 @@ namespace BuildingVolumes.Player
     bool buffersInitialized;
     int bufferIndex;
     int lastBufferUpdateFrame = -1;
+    bool isDisposed;
 
     static readonly int vertexBufferID = Shader.PropertyToID("_VertexBuffer");
     static readonly int indexBufferID = Shader.PropertyToID("_IndexBuffer");
@@ -64,6 +63,8 @@ namespace BuildingVolumes.Player
     public void Setup(SequenceConfiguration configuration, Transform parent, float pointSize, float emission, Material mat, bool instantiateMaterial)
     {
       Dispose();
+      isDisposed = false;
+
 
       this.configuration = configuration;
 
@@ -85,10 +86,7 @@ namespace BuildingVolumes.Player
 
       pcMesh = pcMeshFilter.sharedMesh;
 
-      Bounds bounds = new Bounds();
-      bounds.center = Vector3.zero;
-      bounds.size = new Vector3(1000, 1000, 1000);
-      pcMesh.bounds = bounds;
+      pcMesh.bounds = configuration.GetBounds();
 
       //pcMesh.bounds = configuration.GetBounds();
 
@@ -136,7 +134,7 @@ namespace BuildingVolumes.Player
       pointcloudMaterial = mat;
       if (!pointcloudMaterial)
         pointcloudMaterial = LoadDefaultMaterial(configuration.hasNormals);
-      SetPointcloudMaterial(mat, pointSize, emission, instantiateMaterial);      
+      SetPointcloudMaterial(mat, pointSize, emission, instantiateMaterial);
 
       buffersInitialized = true;
 
@@ -153,7 +151,7 @@ namespace BuildingVolumes.Player
     /// <param name="sourceCount">The amount of points contained in the array</param>
     public void SetFrame(Frame frame)
     {
-      if (!buffersInitialized)
+      if (!buffersInitialized || isDisposed)
         return;
       if (lastBufferUpdateFrame == Time.frameCount)
         return;
@@ -192,7 +190,7 @@ namespace BuildingVolumes.Player
     /// </summary>
     void Render()
     {
-      if (!isDataSet || !buffersInitialized)
+      if (!isDataSet || !buffersInitialized || isDisposed)
         return;
 
 #if UNITY_EDITOR
@@ -224,6 +222,9 @@ namespace BuildingVolumes.Player
     /// <param name="size"></param>
     public void SetPointSize(float size)
     {
+      if (isDisposed)
+        return;
+
       pointScale = size / 2; //Divide by two, otherwise the diameter will be twice as large as expected
       computeShader.SetFloat(pointScaleID, pointScale);
 
@@ -238,9 +239,12 @@ namespace BuildingVolumes.Player
 
     public void SetPointEmission(float emission)
     {
-      if (pcMeshRenderer)
-        if (pcMeshRenderer.sharedMaterial.HasProperty("_Emission"))
-          pcMeshRenderer.sharedMaterial.SetFloat("_Emission", emission);
+      if (isDisposed || !pcMeshRenderer)
+        return;
+
+      if (pcMeshRenderer.sharedMaterial.HasProperty("_Emission"))
+        pcMeshRenderer.sharedMaterial.SetFloat("_Emission", emission);
+
       pointEmission = emission;
     }
 
@@ -271,6 +275,9 @@ namespace BuildingVolumes.Player
 
     public void SetPointcloudMaterial(Material mat, float pointSize, float pointEmission, bool instantiateMaterial)
     {
+      if (isDisposed)
+        return;
+
       SetPointcloudMaterial(mat, instantiateMaterial);
       SetPointSize(pointSize);
       SetPointEmission(pointEmission);
@@ -278,12 +285,14 @@ namespace BuildingVolumes.Player
 
     public void Show()
     {
-      pcMeshRenderer.enabled = true;
+      if (!isDisposed)
+        pcMeshRenderer.enabled = true;
     }
 
     public void Hide()
     {
-      pcMeshRenderer.enabled = false;
+      if (!isDisposed)
+        pcMeshRenderer.enabled = false;
     }
 
     public Material LoadDefaultMaterial(bool normalSupported = false)
@@ -312,7 +321,7 @@ namespace BuildingVolumes.Player
         rotateToCameraMat.Release();
 
       for (int i = 0; i < pointSourceBuffers.Length; i++)
-        if(pointSourceBuffers[i] != null)
+        if (pointSourceBuffers[i] != null)
           pointSourceBuffers[i].Release();
 
       if (pcMeshFilter != null)
@@ -326,6 +335,13 @@ namespace BuildingVolumes.Player
 
       if (computeShader != null)
         DestroyImmediate(computeShader);
+
+      isDisposed = true;
+    }
+
+    public bool IsDisposed()
+    {
+      return isDisposed;
     }
 
     #region DebugMeshBuffer
@@ -419,6 +435,8 @@ namespace BuildingVolumes.Player
       SceneView.beforeSceneGui -= RenderInEditor;
       Dispose();
     }
+
+
 #endif
 
     #endregion

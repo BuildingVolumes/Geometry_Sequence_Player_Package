@@ -347,6 +347,10 @@ namespace BuildingVolumes.Player
     {
       pointcloudRenderer?.Dispose();
       meshSequenceRenderer?.Dispose();
+
+      thumbnailPCRenderer?.Dispose();
+      meshSequenceRenderer?.Dispose();
+
       bufferedReader?.DisposeFrameBuffer(true);
       readerInitialized = false;
     }

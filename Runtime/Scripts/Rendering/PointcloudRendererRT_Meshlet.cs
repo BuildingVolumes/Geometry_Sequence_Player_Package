@@ -32,6 +32,7 @@ namespace BuildingVolumes.Player
     GameObject meshletPrefab;
 
     bool ready = true;
+    bool isDisposed;
 
     //Compute shader property IDs
     static readonly int pointSourceBufferID = Shader.PropertyToID("_PointSourceBuffer");
@@ -57,6 +58,12 @@ namespace BuildingVolumes.Player
     public void Setup(SequenceConfiguration configuration, Transform parent, float pointSize, float pointEmission, Material mat, bool instantiateMaterial)
     {
       Dispose();
+
+      if (configuration.hasNormals)
+      {
+        Debug.LogError("Pointcloud sequences with normals are not supported on Polyspatial!");
+        return;
+      }
 
       pcRenderParent = CreateStreamObject("PointcloudRenderer", parent);
 
@@ -93,6 +100,8 @@ namespace BuildingVolumes.Player
       computeShaderRT.SetBuffer(0, pointSourceBufferID, pointSourceBuffer);
       computeShaderRT.SetTexture(0, rtPositionsID, rtPositions);
       computeShaderRT.SetTexture(0, rtColorsID, rtColors);
+
+      isDisposed = false;
 
       //Create the pointcloud mesh with n points
       StartCoroutine(MeshCreation(configuration, pointSize, pointEmission, mat, instantiateMaterial));
@@ -176,7 +185,7 @@ namespace BuildingVolumes.Player
     /// <param name="pointCount">The number of points in the current frame</param>
     public void SetFrame(Frame frame)
     {
-      if (!ready)
+      if (!ready || isDisposed)
         return;
 
       frame.geoJobHandle.Complete();
@@ -365,7 +374,15 @@ namespace BuildingVolumes.Player
 
       if (pcRenderParent != null)
         DestroyImmediate(pcRenderParent);
+
+      isDisposed = true;
     }
+
+    public bool IsDisposed()
+    {
+      return isDisposed;
+    }
+
   }
 
 }

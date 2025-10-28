@@ -31,6 +31,7 @@ namespace BuildingVolumes.Player
     float currentPointEmission = 1;
 
     bool ready = true;
+    bool isDisposed;
 
     //Compute shader property IDs
     static readonly int pointSourceBufferID = Shader.PropertyToID("_PointSourceBuffer");
@@ -61,6 +62,7 @@ namespace BuildingVolumes.Player
       Dispose();
 
       ready = true;
+      isDisposed = false;
 
       if (computeShaderRT == null)
         computeShaderRT = Resources.Load("ShaderGraph/Pointcloud_Shadergraph", typeof(ComputeShader)) as ComputeShader;
@@ -111,6 +113,7 @@ namespace BuildingVolumes.Player
       pcObject = MeshCreation(configuration);
 
       SetPointcloudMaterial(pointMaterial, pointSize, pointEmission, instantiateMaterial, configuration.hasNormals);
+
     }
 
     /// <summary>
@@ -174,7 +177,7 @@ namespace BuildingVolumes.Player
         uvs[i * 4 + 2] = uv3;
         uvs[i * 4 + 3] = uv4;
 
-        if(config.hasNormals)
+        if (config.hasNormals)
         {
           normals[i * 4 + 0] = normal;
           normals[i * 4 + 1] = normal;
@@ -197,7 +200,7 @@ namespace BuildingVolumes.Player
       mesh.triangles = indices;
       mesh.SetUVs(0, uvs);
       mesh.bounds = config.GetBounds();
-      if(config.hasNormals)
+      if (config.hasNormals)
         mesh.normals = normals;
 
       pcMeshFilter.sharedMesh = mesh;
@@ -213,7 +216,7 @@ namespace BuildingVolumes.Player
     /// <param name="pointCount">The number of points in the current frame</param>
     public void SetFrame(Frame frame)
     {
-      if (!ready)
+      if (!ready || isDisposed)
         return;
 
       bufferIndex++;
@@ -245,6 +248,9 @@ namespace BuildingVolumes.Player
 
     public void SetPointcloudMaterial(Material mat, float pointSize, float pointEmission, bool instantiateMaterial, bool hasNormals = false)
     {
+      if (isDisposed || !pcMeshRenderer)
+        return;
+
       if (!mat)
         mat = LoadDefaultMaterial(hasNormals);
 
@@ -253,15 +259,15 @@ namespace BuildingVolumes.Player
       currentPointEmission = pointEmission;
 
       Material newMat;
-      
-      if(instantiateMaterial)
+
+      if (instantiateMaterial)
         newMat = new Material(mat);
       else
         newMat = mat;
       newMat.SetFloat(rtResolutionID, rtResolution);
       newMat.SetTexture(rtPositionSourceID, rtPositions);
       newMat.SetTexture(rtColorSourceID, rtColors);
-      if(hasNormals)
+      if (hasNormals)
         newMat.SetTexture(rtNormalSourceID, rtNormals);
 
       if (newMat.HasFloat(pointScaleID))
@@ -276,14 +282,18 @@ namespace BuildingVolumes.Player
 
     public void Show()
     {
-      if (pcMeshRenderer)
-        pcMeshRenderer.enabled = true;
+      if (isDisposed || !pcMeshRenderer)
+        return;
+
+      pcMeshRenderer.enabled = true;
     }
 
     public void Hide()
     {
-      if (pcMeshRenderer)
-        pcMeshRenderer.enabled = true;
+      if (isDisposed || !pcMeshRenderer)
+        return;
+
+      pcMeshRenderer.enabled = true;
     }
 
     GameObject CreateStreamObject(string name, Transform parent)
@@ -301,7 +311,7 @@ namespace BuildingVolumes.Player
     {
       Material mat;
 
-      if(hasNormals)
+      if (hasNormals)
         mat = new Material(Resources.Load("ShaderGraph/Pointcloud_Circles_Lit_Shadergraph", typeof(Material)) as Material);
       else
         mat = new Material(Resources.Load("ShaderGraph/Pointcloud_Circles_Shadergraph", typeof(Material)) as Material);
@@ -314,20 +324,24 @@ namespace BuildingVolumes.Player
 
     public void SetPointSize(float size)
     {
-      currentPointSize = size;
+      if (isDisposed || !pcMeshRenderer)
+        return;
 
-      if (pcMeshRenderer)
-        if (pcMeshRenderer.sharedMaterial.HasFloat(pointScaleID))
-          pcMeshRenderer.sharedMaterial.SetFloat(pointScaleID, size);
+      if (pcMeshRenderer.sharedMaterial.HasFloat(pointScaleID))
+        pcMeshRenderer.sharedMaterial.SetFloat(pointScaleID, size);
+
+      currentPointSize = size;
     }
 
     public void SetPointEmission(float emission)
     {
-      currentPointEmission = emission;
+      if (isDisposed || !pcMeshRenderer)
+        return;
 
-      if (pcMeshRenderer)
-        if (pcMeshRenderer.sharedMaterial.HasFloat(pointEmissionID))
-          pcMeshRenderer.sharedMaterial.SetFloat(pointEmissionID, emission);
+      if (pcMeshRenderer.sharedMaterial.HasFloat(pointEmissionID))
+        pcMeshRenderer.sharedMaterial.SetFloat(pointEmissionID, emission);
+
+      currentPointEmission = emission;
     }
 
     public void Dispose()
@@ -346,7 +360,15 @@ namespace BuildingVolumes.Player
 
       if (pcObject != null)
         DestroyImmediate(pcObject);
+
+      isDisposed = true;
     }
+
+    public bool IsDisposed()
+    {
+      return isDisposed;
+    }
+
   }
 
 }
