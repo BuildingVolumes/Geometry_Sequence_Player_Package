@@ -26,7 +26,7 @@ RenderSettings:
   m_AmbientIntensity: 1
   m_AmbientMode: 0
   m_SubtractiveShadowColor: {r: 0.42, g: 0.478, b: 0.627, a: 1}
-  m_SkyboxMaterial: {fileID: 10304, guid: 0000000000000000f000000000000000, type: 0}
+  m_SkyboxMaterial: {fileID: 0}
   m_HaloStrength: 0.5
   m_FlareStrength: 1
   m_FlareFadeSpeed: 3
@@ -260,7 +260,7 @@ Transform:
   m_GameObject: {fileID: 47858290}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -0.546, y: 5.28, z: 0}
+  m_LocalPosition: {x: -0.546, y: 5.15, z: 0}
   m_LocalScale: {x: 4, y: 4, z: 4}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -306,7 +306,8 @@ MonoBehaviour:
   threadCount: 4
   attachFrameDebugger: 0
   frameDebugger: {fileID: 0}
-  customMaterial: {fileID: 2100000, guid: db6bd4698e14587418724706faa40d8d, type: 2}
+  customMaterial: {fileID: -876546973899608171, guid: 945b1bd21844afd4bb90e0695df073ee,
+    type: 3}
   instantiateMaterial: 0
   materialSlots: 1
   customMaterialSlots: []
@@ -336,7 +337,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: '::'
   distortionSphere: {fileID: 1824282141}
-  distortionMaterial: {fileID: 2100000, guid: db6bd4698e14587418724706faa40d8d, type: 2}
+  stream: {fileID: 47858295}
 --- !u!1 &1420777152
 GameObject:
   m_ObjectHideFlags: 0
@@ -365,7 +366,7 @@ Light:
   serializedVersion: 11
   m_Type: 1
   m_Color: {r: 1, g: 1, b: 1, a: 1}
-  m_Intensity: 1
+  m_Intensity: 100000
   m_Range: 10
   m_SpotAngle: 30
   m_InnerSpotAngle: 21.80208
@@ -405,18 +406,18 @@ Light:
     m_Bits: 4294967295
   m_RenderingLayerMask: 1
   m_Lightmapping: 4
-  m_LightShadowCasterMode: 0
+  m_LightShadowCasterMode: 2
   m_AreaSize: {x: 1, y: 1}
   m_BounceIntensity: 1
   m_ColorTemperature: 6570
-  m_UseColorTemperature: 0
-  m_BoundingSphereOverride: {x: 0, y: 0, z: 0, w: 0}
+  m_UseColorTemperature: 1
+  m_BoundingSphereOverride: {x: 0, y: 9.1835e-41, z: 2.0387484e-38, w: 4.5697343e-37}
   m_UseBoundingSphereOverride: 0
   m_UseViewFrustumForShadowCasterCull: 1
   m_ForceVisible: 0
   m_ShadowRadius: 0
   m_ShadowAngle: 0
-  m_LightUnit: 1
+  m_LightUnit: 2
   m_LuxAtDistance: 1
   m_EnableSpotReflector: 1
 --- !u!4 &1420777154
@@ -597,8 +598,8 @@ Camera:
   m_TargetTexture: {fileID: 0}
   m_TargetDisplay: 0
   m_TargetEye: 3
-  m_HDR: 1
-  m_AllowMSAA: 1
+  m_HDR: 0
+  m_AllowMSAA: 0
   m_AllowDynamicResolution: 0
   m_ForceIntoRT: 0
   m_OcclusionCulling: 1
@@ -613,7 +614,7 @@ Transform:
   m_GameObject: {fileID: 1764203794}
   serializedVersion: 2
   m_LocalRotation: {x: 0.008486294, y: -0.9714254, z: 0.23456295, w: 0.03522543}
-  m_LocalPosition: {x: -0.114, y: 5.05, z: 1.24}
+  m_LocalPosition: {x: -0.076, y: 6.36, z: 1.766}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -743,8 +744,8 @@ Transform:
   m_GameObject: {fileID: 1824282137}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -0.164, y: 4.391, z: 0.334}
-  m_LocalScale: {x: 0.25129566, y: 0.25129566, z: 0.25129566}
+  m_LocalPosition: {x: -0.101, y: 4.59, z: 0.325}
+  m_LocalScale: {x: 0.14199412, y: 0.12640269, z: 0.12640269}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
