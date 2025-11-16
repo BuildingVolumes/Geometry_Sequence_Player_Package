@@ -19,7 +19,8 @@ namespace BuildingVolumes.Player
     public bool hasNormals = false;
     public int maxVertexCount;
     public int maxIndiceCount;
-    public List<float> maxBounds;
+    public List<float> boundsCenter;
+    public List<float> boundsSize;
     public int textureWidth;
     public int textureHeight;
     public int textureSizeDDS;
@@ -70,16 +71,8 @@ namespace BuildingVolumes.Player
 
     public Bounds GetBounds()
     {
-      Vector3 center = Vector3.zero;
-      center.x = (maxBounds[0] + maxBounds[3]) / 2;
-      center.y = (maxBounds[1] + maxBounds[4]) / 2;
-      center.z = (maxBounds[2] + maxBounds[5]) / 2;
-
-      Vector3 size = Vector3.zero;
-      size.x = Mathf.Abs(maxBounds[0]) + Mathf.Abs(maxBounds[3]);
-      size.y = Mathf.Abs(maxBounds[1]) + Mathf.Abs(maxBounds[4]);
-      size.z = Mathf.Abs(maxBounds[2]) + Mathf.Abs(maxBounds[5]);
-
+      Vector3 center = new Vector3(boundsCenter[0], boundsCenter[1], boundsCenter[2]);
+      Vector3 size = new Vector3(boundsSize[0], boundsSize[1], boundsSize[2]);
       return new Bounds(center, size);
     }
 
