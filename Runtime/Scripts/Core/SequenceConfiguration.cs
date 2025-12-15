@@ -71,9 +71,26 @@ namespace BuildingVolumes.Player
 
     public Bounds GetBounds()
     {
-      Vector3 center = new Vector3(boundsCenter[0], boundsCenter[1], boundsCenter[2]);
-      Vector3 size = new Vector3(boundsSize[0], boundsSize[1], boundsSize[2]);
-      return new Bounds(center, size);
+      bool usesDeprecatedBounds = true;
+
+      if (boundsCenter != null)
+        if (boundsCenter.Count == 3)
+          usesDeprecatedBounds = false;
+
+      if (usesDeprecatedBounds)
+      {
+        Debug.LogWarning("Sequence was created with a deprecated version of the Converter tool. Please update the converter tool and re-convert your sequence: " + "https://github.com/BuildingVolumes/Unity_Geometry_Sequence_Player/releases/");
+        return new Bounds(Vector3.zero, new Vector3(1000, 1000, 1000));
+      }
+
+      else
+      {
+        Vector3 center = new Vector3(boundsCenter[0], boundsCenter[1], boundsCenter[2]);
+        Vector3 size = new Vector3(boundsSize[0], boundsSize[1], boundsSize[2]);
+        return new Bounds(center, size);
+      }
+
+
     }
 
     static public TextureFormat GetDeviceDependentTextureFormat()
