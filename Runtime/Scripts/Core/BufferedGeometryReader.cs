@@ -29,6 +29,8 @@ namespace BuildingVolumes.Player
     public JobHandle geoJobHandle;
     public ReadTextureJob textureJob;
     public JobHandle textureJobHandle;
+    public PostProcessJob postProcessJob;
+    public JobHandle postProcessJobHandle;
 
     public BufferState bufferState = BufferState.Empty;
     public int readBufferSize;
@@ -618,7 +620,10 @@ namespace BuildingVolumes.Player
       unsafe { readVerticesCmd.Buffer = NativeArrayUnsafeUtility.GetUnsafePtr<byte>(vertexBuffer); }
 
       if (geoType == GeometryType.point)
-        readVerticesCmd.Size = 4 * 4;
+      {
+        readVerticesCmd.Size = 3 * 4; // Vertex Coords 
+        readVerticesCmd.Size += 4; // Vertex Color
+      }
       else
         readVerticesCmd.Size = 3 * 4;
 
@@ -728,6 +733,14 @@ namespace BuildingVolumes.Player
       readTextureHandle.Dispose();
 
       readFinished = true;
+    }
+  }
+
+  public struct PostProcessJob : IJob
+  {
+    public void Execute()
+    {
+      
     }
   }
 }

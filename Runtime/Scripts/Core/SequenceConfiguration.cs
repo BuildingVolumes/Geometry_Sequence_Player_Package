@@ -17,6 +17,8 @@ namespace BuildingVolumes.Player
     public bool ASTC;
     public bool hasUVs;
     public bool hasNormals = false;
+    public bool hasAlpha = true;
+    public bool halfPrecision;
     public int maxVertexCount;
     public int maxIndiceCount;
     public List<float> boundsCenter;
