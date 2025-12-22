@@ -306,7 +306,7 @@ namespace BuildingVolumes.Player
     }
 
     /// <summary>
-    /// Get's the relative path to the sequence directory. Get the path which it is relative to with GetRelativeTo()
+    /// Gets the relative path to the sequence directory. Get the path which it is relative to with GetRelativeTo()
     /// </summary>
     /// <returns></returns>
     public string GetRelativeSequencePath()
@@ -315,7 +315,7 @@ namespace BuildingVolumes.Player
     }
 
     /// <summary>
-    /// Get the location to to which the relativePath is relative to.
+    /// Get the location to which the relativePath is relative to.
     /// </summary>
     /// <returns>The relative location.</returns>
     public GeometrySequenceStream.PathType GetRelativeTo()
@@ -421,7 +421,7 @@ namespace BuildingVolumes.Player
 
     /// <summary>
     /// Check if there have been framedrops since you last checked this function
-    /// Too many framedrops mean the system can't keep up with the playback
+    /// Too many framedrops mean the system can't keep up with the playback,
     /// and you should reduce your Geometric complexity or framerate
     /// </summary>
     /// <returns></returns>

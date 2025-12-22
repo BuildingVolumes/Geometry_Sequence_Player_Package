@@ -1,10 +1,9 @@
 using System;
 using System.IO;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using Unity.Collections;
 using UnityEngine;
-using UnityEngine.Rendering;
-using UnityEngine.Jobs;
 using Unity.Jobs;
 using System.Text;
 using System.Linq;
@@ -14,6 +13,7 @@ using Unity.IO.LowLevel.Unsafe;
 using Unity.Collections.LowLevel.Unsafe;
 using System.Threading;
 
+// ReSharper disable once CheckNamespace
 namespace BuildingVolumes.Player
 {
   public class Frame
@@ -32,7 +32,7 @@ namespace BuildingVolumes.Player
     public PostProcessJob postProcessJob;
     public JobHandle postProcessJobHandle;
 
-    public BufferState bufferState = BufferState.Empty;
+    public BufferState bufferState;
     public int readBufferSize;
     public int playbackIndex;
     public float finishedBufferingTime;
@@ -48,6 +48,7 @@ namespace BuildingVolumes.Player
 
   public enum BufferState { Empty, Consumed, Reading, Loading, Ready, Playing }
 
+  [SuppressMessage("ReSharper", "InconsistentNaming")]
   public class BufferedGeometryReader
   {
     public string folder;
@@ -56,7 +57,7 @@ namespace BuildingVolumes.Player
     public string[] texturesFilePathDDS;
     public string[] texturesFilePathASTC;
     public int bufferSize = 4;
-    public int totalFrames = 0;
+    public int totalFrames;
     public int frameCount = 0;
     public Frame[] frameBuffer;
 
@@ -79,34 +80,35 @@ namespace BuildingVolumes.Player
     }
 
     /// <summary>
-    /// Use this function to setup a new buffered Reader.
+    /// Use this function to set up a new buffered Reader.
     /// </summary>
-    /// <param name="folder">A path to a folder containing .ply geometry files and optionally .dds texture files</param>
+    /// <param name="folderPath">A path to a folder containing .ply geometry files and optionally .dds texture files</param>
+    /// <param name="frameBufferSize">Number of frames to buffer</param>
     /// <returns>Returns true on success, false when any errors have occured during setup</returns>
-    public bool SetupReader(string folder, int frameBufferSize)
+    public bool SetupReader(string folderPath, int frameBufferSize)
     {
-      this.folder = folder;
+      this.folder = folderPath;
 
-      sequenceConfig = LoadConfigFromFile(folder);
+      sequenceConfig = LoadConfigFromFile(folderPath);
       if (sequenceConfig == null)
         return false;
 
       try
       {
         //Add a temporary padding to the file list, as otherwise the file order will be messed up
-        plyFilePaths = new List<string>(Directory.GetFiles(folder, "*.ply")).OrderBy(file =>
-        Regex.Replace(file, @"\d+", match => match.Value.PadLeft(9, '0'))).ToArray<string>();
+        plyFilePaths = new List<string>(Directory.GetFiles(folderPath, "*.ply")).OrderBy(file =>
+        Regex.Replace(file, @"\d+", match => match.Value.PadLeft(9, '0'))).ToArray();
       }
 
       catch (Exception e)
       {
-        Debug.LogError("Sequence path is not valid or has restricted access! Path: " + folder + " Error: " + e.Message);
+        Debug.LogError("Sequence path is not valid or has restricted access! Path: " + folderPath + " Error: " + e.Message);
         return false;
       }
 
       if (plyFilePaths.Length == 0)
       {
-        Debug.LogError("No .ply files in the sequence directory: " + folder);
+        Debug.LogError("No .ply files in the sequence directory: " + folderPath);
         return false;
       }
 
@@ -123,13 +125,13 @@ namespace BuildingVolumes.Player
           try
           {
             //Add a temporary padding to the file list, as otherwise the file order will be messed up
-            texturesFilePathDDS = new List<string>(Directory.GetFiles(folder, "*.dds")).OrderBy(file =>
-            Regex.Replace(file, @"\d+", match => match.Value.PadLeft(9, '0'))).ToArray<string>();
+            texturesFilePathDDS = new List<string>(Directory.GetFiles(folderPath, "*.dds")).OrderBy(file =>
+            Regex.Replace(file, @"\d+", match => match.Value.PadLeft(9, '0'))).ToArray();
           }
 
           catch (Exception e)
           {
-            Debug.LogError("Sequence path is not valid or has restricted access! Path: " + folder + " Error: " + e.Message);
+            Debug.LogError("Sequence path is not valid or has restricted access! Path: " + folderPath + " Error: " + e.Message);
             return false;
           }
 
@@ -154,13 +156,13 @@ namespace BuildingVolumes.Player
           try
           {
             //Add a temporary padding to the file list, as otherwise the file order will be messed up
-            texturesFilePathASTC = new List<string>(Directory.GetFiles(folder, "*.astc")).OrderBy(file =>
-            Regex.Replace(file, @"\d+", match => match.Value.PadLeft(9, '0'))).ToArray<string>();
+            texturesFilePathASTC = new List<string>(Directory.GetFiles(folderPath, "*.astc")).OrderBy(file =>
+            Regex.Replace(file, @"\d+", match => match.Value.PadLeft(9, '0'))).ToArray();
           }
 
           catch (Exception e)
           {
-            Debug.LogError("Sequence path is not valid or has restricted access! Path: " + folder + " Error: " + e.Message);
+            Debug.LogError("Sequence path is not valid or has restricted access! Path: " + folderPath + " Error: " + e.Message);
             return false;
           }
 
@@ -259,21 +261,20 @@ namespace BuildingVolumes.Player
       }
 
       //Check if we have any free buffer space to buffer more frames
-      for (int i = 0; i < frameBuffer.Length; i++)
+      foreach (var frame in frameBuffer)
       {
         //Check if the buffer is ready to load the next frame 
-        if ((frameBuffer[i].bufferState == BufferState.Consumed || frameBuffer[i].bufferState == BufferState.Empty) && framesToBuffer.Count > 0)
+        if (frame.bufferState is BufferState.Consumed or BufferState.Empty && framesToBuffer.Count > 0)
         {
           int newPlaybackIndex = framesToBuffer[0];
 
           if (newPlaybackIndex < totalFrames)
           {
             //Debug.Log("Buffering Frame: " + newPlaybackIndex + " at buffer " + i);
-            ScheduleFrame(frameBuffer[i], newPlaybackIndex);
+            ScheduleFrame(frame, newPlaybackIndex);
             framesToBuffer.Remove(newPlaybackIndex);
           }
         }
-
       }
 
       JobHandle.ScheduleBatchedJobs();
@@ -307,6 +308,7 @@ namespace BuildingVolumes.Player
       frame.bufferState = BufferState.Reading;
     }
 
+    // ReSharper disable once UnusedParameter.Local
     void AllocateFrame(Frame frame, SequenceConfiguration config, int bufferIndex)
     {
       frame.sequenceConfiguration.geometryType = config.geometryType;
@@ -352,9 +354,10 @@ namespace BuildingVolumes.Player
 
     /// <summary>
     /// Marks frames that are in the past of current Frame index
-    /// Should be regularily called to keep the buffer clean in case of skips/lag
+    /// Should be regularly called to keep the buffer clean in case of skips/lag
     /// </summary>
     /// <param name="targetPlaybackIndex">The currently shown/played back frame</param>
+    /// <param name="lastPlaybackIndex">The last shown/played back frame</param>
     public void DeletePastFrames(int targetPlaybackIndex, int lastPlaybackIndex)
     {
       //We want to keep all frames in the buffer, which are one buffersize ahead of
@@ -363,10 +366,10 @@ namespace BuildingVolumes.Player
       if (targetMaxFrame >= totalFrames)
         targetMaxFrame = targetMaxFrame % totalFrames;
 
-      for (int i = 0; i < frameBuffer.Length; i++)
+      foreach (var frame in frameBuffer)
       {
         bool dispose = false;
-        int playbackIndex = frameBuffer[i].playbackIndex;
+        int playbackIndex = frame.playbackIndex;
 
         //If the target max frame has already looped around the ringbuffer
         if (targetMaxFrame < targetPlaybackIndex)
@@ -381,13 +384,10 @@ namespace BuildingVolumes.Player
             dispose = true;
         }
 
-        if (dispose)
+        if (dispose && playbackIndex != lastPlaybackIndex)
         {
-          if (playbackIndex != lastPlaybackIndex)
-          {
-            frameBuffer[i].bufferState = BufferState.Empty;
-            //Debug.Log("Deleting frame " + playbackIndex + " from Buffer " + i);
-          }
+          frame.bufferState = BufferState.Empty;
+          //Debug.Log("Deleting frame " + playbackIndex + " from Buffer " + i);
         }
       }
     }
@@ -437,9 +437,9 @@ namespace BuildingVolumes.Player
     {
       int loadedFrames = 0;
 
-      for (int i = 0; i < frameBuffer.Length; i++)
+      foreach (var frame in frameBuffer)
       {
-        if (IsFrameBuffered(frameBuffer[i]))
+        if (IsFrameBuffered(frame))
           loadedFrames++;
       }
 
@@ -569,15 +569,15 @@ namespace BuildingVolumes.Player
 
       if (frameBuffer != null)
       {
-        for (int i = 0; i < frameBuffer.Length; i++)
+        foreach (var frame in frameBuffer)
         {
-          frameBuffer[i].geoJobHandle.Complete();
-          frameBuffer[i].vertexBufferRaw.Dispose();
-          frameBuffer[i].indiceBufferRaw.Dispose();
-          frameBuffer[i].indiceIntermediateBuffer.Dispose();
+          frame.geoJobHandle.Complete();
+          frame.vertexBufferRaw.Dispose();
+          frame.indiceBufferRaw.Dispose();
+          frame.indiceIntermediateBuffer.Dispose();
 
-          frameBuffer[i].textureJobHandle.Complete();
-          frameBuffer[i].textureBufferRaw.Dispose();
+          frame.textureJobHandle.Complete();
+          frame.textureBufferRaw.Dispose();
         }
       }
 
@@ -650,14 +650,14 @@ namespace BuildingVolumes.Player
 
       if (geoType != GeometryType.point)
       {
-        //Reading the index is a bit more tricky because each index line contains the number of indices in that line, which we dont want to include
+        //Reading the index is a bit more tricky because each index line contains the number of indices in that line, which we don't want to include
         //So we first read it into a temporary array, and then copy only the indices
 
         ReadCommand readIndicesCmd;
         ReadHandle readIndicesHandle;
         readIndicesCmd.Offset = headerSize + readVerticesCmd.Size;
         readIndicesCmd.Size = (indiceCount * 4) + indiceCount;
-        unsafe { readIndicesCmd.Buffer = NativeArrayUnsafeUtility.GetUnsafePtr<byte>(indiceIntermediateBuffer); }
+        unsafe { readIndicesCmd.Buffer = indiceIntermediateBuffer.GetUnsafePtr(); }
         readCmd[0] = readIndicesCmd;
         unsafe { readIndicesHandle = AsyncReadManager.Read(path, (ReadCommand*)readCmd.GetUnsafePtr(), 1); }
 
@@ -699,11 +699,10 @@ namespace BuildingVolumes.Player
     public void Execute()
     {
       readFinished = false;
-      string texturePath = "";
 
       byte[] texturePathCharBuffer = new byte[texturePathCharArray.Length];
       texturePathCharArray.CopyTo(texturePathCharBuffer);
-      texturePath = Encoding.UTF8.GetString(texturePathCharBuffer);
+      string texturePath = Encoding.UTF8.GetString(texturePathCharBuffer);
 
       int headerSize = 0;
       if (format == SequenceConfiguration.TextureFormat.DDS)
@@ -715,7 +714,7 @@ namespace BuildingVolumes.Player
       ReadHandle readTextureHandle;
       readTextureCmd.Offset = headerSize;
       readTextureCmd.Size = textureSize;
-      unsafe { readTextureCmd.Buffer = NativeArrayUnsafeUtility.GetUnsafePtr<byte>(textureRawData); }
+      unsafe { readTextureCmd.Buffer = textureRawData.GetUnsafePtr(); }
 
 
       readCmd[0] = readTextureCmd;

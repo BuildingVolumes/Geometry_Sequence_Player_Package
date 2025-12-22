@@ -110,7 +110,7 @@ namespace BuildingVolumes.Player
 
       if (bufferedReader.sequenceConfig.geometryType == SequenceConfiguration.GeometryType.point)
           pointcloudRenderer = SetupPointcloudRenderer(bufferedReader, pointRenderPath);
-        else
+      else
           meshSequenceRenderer = SetupMeshSequenceRenderer(bufferedReader, pointRenderPath);
 
       targetFrameTimeMs = 1000f / (float)playbackFPS;
