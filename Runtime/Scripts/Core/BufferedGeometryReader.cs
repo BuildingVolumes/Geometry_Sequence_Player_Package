@@ -12,6 +12,8 @@ using static BuildingVolumes.Player.SequenceConfiguration;
 using Unity.IO.LowLevel.Unsafe;
 using Unity.Collections.LowLevel.Unsafe;
 using System.Threading;
+using Unity.Mathematics;
+using Unity.Burst;
 
 // ReSharper disable once CheckNamespace
 namespace BuildingVolumes.Player
@@ -19,6 +21,7 @@ namespace BuildingVolumes.Player
   public class Frame
   {
     public NativeArray<byte> vertexBufferRaw;
+    public NativeArray<byte> vertexIntermediateBuffer;
     public NativeArray<byte> indiceBufferRaw;
     public NativeArray<byte> indiceIntermediateBuffer;
     public NativeArray<byte> textureBufferRaw;
@@ -314,6 +317,7 @@ namespace BuildingVolumes.Player
       frame.sequenceConfiguration.geometryType = config.geometryType;
       frame.geoJob = new ReadGeometryJob();
       frame.textureJob = new ReadTextureJob();
+      frame.postProcessJob = new PostProcessJob();
 
       //Allocate every frame with the highest amount of vertices and indices being used in this sequence. 
       //This way, we can re-use the meshArrays, instead of re-allocating them each frame
@@ -322,8 +326,14 @@ namespace BuildingVolumes.Player
         int vertexSizeBytes = 4 * 4; //3 vertex position floats + 1 byte of color
         if (config.hasNormals)
           vertexSizeBytes += 3 * 4; //3 vertex normal floats
+        int vertexIntermediateSizeBytes = 3 * 4;
+        if (!config.hasAlpha)
+          vertexIntermediateSizeBytes -= 1;
+        if (config.halfPrecision)
+          vertexIntermediateSizeBytes -= 2;
 
         frame.vertexBufferRaw = new NativeArray<byte>(config.maxVertexCount * vertexSizeBytes, Allocator.Persistent);
+        frame.vertexIntermediateBuffer = new NativeArray<byte>(config.maxVertexCount * vertexIntermediateSizeBytes, Allocator.Persistent);
         frame.indiceBufferRaw = new NativeArray<byte>(1, Allocator.Persistent);
         frame.indiceIntermediateBuffer = new NativeArray<byte>(1, Allocator.Persistent);
       }
@@ -526,14 +536,33 @@ namespace BuildingVolumes.Player
       frame.geoJob.geoType = frame.sequenceConfiguration.geometryType;
       frame.geoJob.hasUVs = frame.sequenceConfiguration.hasUVs;
       frame.geoJob.hasNormals = frame.sequenceConfiguration.hasNormals;
+      frame.geoJob.hasAlpha = frame.sequenceConfiguration.hasAlpha;
+      frame.geoJob.halfPrecision = frame.sequenceConfiguration.halfPrecision;
       frame.geoJob.headerSize = frame.sequenceConfiguration.headerSizes[frame.playbackIndex];
       frame.geoJob.vertexCount = frame.sequenceConfiguration.verticeCounts[frame.playbackIndex];
       frame.geoJob.indiceCount = frame.sequenceConfiguration.indiceCounts[frame.playbackIndex];
       frame.geoJob.maxIndiceCount = frame.sequenceConfiguration.maxIndiceCount;
       frame.geoJob.vertexBuffer = frame.vertexBufferRaw;
+      frame.geoJob.vertexIntermediateBuffer = frame.vertexIntermediateBuffer;
       frame.geoJob.indiceBuffer = frame.indiceBufferRaw;
       frame.geoJob.indiceIntermediateBuffer = frame.indiceIntermediateBuffer;
-      frame.geoJobHandle = frame.geoJob.Schedule(frame.geoJobHandle);
+      JobHandle geoDeps = frame.geoJobHandle;
+      if (sequenceConfig.halfPrecision || !sequenceConfig.hasAlpha)
+        geoDeps = JobHandle.CombineDependencies(geoDeps, frame.postProcessJobHandle);
+
+      frame.geoJobHandle = frame.geoJob.Schedule(geoDeps);
+
+      if (sequenceConfig.halfPrecision || !sequenceConfig.hasAlpha)
+      {
+        frame.postProcessJob.halfPrecision = sequenceConfig.halfPrecision;
+        frame.postProcessJob.hasAlpha = sequenceConfig.hasAlpha;
+        frame.postProcessJob.boundsCenter = sequenceConfig.boundsCenterNative;
+        frame.postProcessJob.boundsSize = sequenceConfig.boundsSizeNative;
+        frame.postProcessJob.vertexBuffer = frame.vertexBufferRaw;
+        frame.postProcessJob.vertexIntermediateBuffer = frame.vertexIntermediateBuffer;
+        JobHandle postProcessDeps = JobHandle.CombineDependencies(frame.postProcessJobHandle, frame.geoJobHandle);
+        frame.postProcessJobHandle = frame.postProcessJob.Schedule(sequenceConfig.verticeCounts[frame.playbackIndex],1024, postProcessDeps);
+      }
     }
 
     /// <summary>
@@ -572,7 +601,9 @@ namespace BuildingVolumes.Player
         foreach (var frame in frameBuffer)
         {
           frame.geoJobHandle.Complete();
+          frame.postProcessJobHandle.Complete();
           frame.vertexBufferRaw.Dispose();
+          frame.vertexIntermediateBuffer.Dispose();
           frame.indiceBufferRaw.Dispose();
           frame.indiceIntermediateBuffer.Dispose();
 
@@ -587,17 +618,20 @@ namespace BuildingVolumes.Player
 
   public struct ReadGeometryJob : IJob
   {
-    public NativeArray<byte> vertexBuffer;
-    public NativeArray<byte> indiceIntermediateBuffer;
-    public NativeArray<byte> indiceBuffer;
-    public bool hasUVs;
-    public bool hasNormals;
-    public bool readFinished;
-    public int headerSize;
-    public int vertexCount;
-    public int indiceCount;
-    public int maxIndiceCount;
-    public GeometryType geoType;
+    [WriteOnly] public NativeArray<byte> vertexIntermediateBuffer;
+    [WriteOnly] public NativeArray<byte> vertexBuffer;
+    [WriteOnly] public NativeArray<byte> indiceIntermediateBuffer;
+    [WriteOnly] public NativeArray<byte> indiceBuffer;
+    [ReadOnly] public bool hasUVs;
+    [ReadOnly] public bool hasNormals;
+    [ReadOnly] public bool hasAlpha;
+    [ReadOnly] public bool halfPrecision;
+    [ReadOnly] public bool readFinished;
+    [ReadOnly] public int headerSize;
+    [ReadOnly] public int vertexCount;
+    [ReadOnly] public int indiceCount;
+    [ReadOnly] public int maxIndiceCount;
+    [ReadOnly] public GeometryType geoType;
 
     [DeallocateOnJobCompletion]
     public NativeArray<byte> pathCharArray;
@@ -617,12 +651,15 @@ namespace BuildingVolumes.Player
       ReadCommand readVerticesCmd;
       ReadHandle readVerticesHandle;
       readVerticesCmd.Offset = headerSize;
-      unsafe { readVerticesCmd.Buffer = NativeArrayUnsafeUtility.GetUnsafePtr<byte>(vertexBuffer); }
+      if (!hasAlpha || halfPrecision)
+        unsafe { readVerticesCmd.Buffer = vertexIntermediateBuffer.GetUnsafePtr(); }
+      else
+        unsafe { readVerticesCmd.Buffer = vertexBuffer.GetUnsafePtr(); }
 
       if (geoType == GeometryType.point)
       {
-        readVerticesCmd.Size = 3 * 4; // Vertex Coords 
-        readVerticesCmd.Size += 4; // Vertex Color
+        readVerticesCmd.Size = 3 * (halfPrecision ? 2 : 4); // Vertex Coords 
+        readVerticesCmd.Size += hasAlpha ? 4 : 3; // Vertex Color
       }
       else
         readVerticesCmd.Size = 3 * 4;
@@ -735,11 +772,48 @@ namespace BuildingVolumes.Player
     }
   }
 
-  public struct PostProcessJob : IJob
+  public struct PostProcessJob : IJobParallelFor
   {
-    public void Execute()
+    [ReadOnly] public NativeArray<float> boundsCenter;
+    [ReadOnly] public NativeArray<float> boundsSize;
+    [ReadOnly] public bool hasAlpha;
+    [ReadOnly] public bool halfPrecision;
+    
+    [ReadOnly] public NativeArray<byte> vertexIntermediateBuffer;
+    [WriteOnly] public NativeArray<byte> vertexBuffer;
+
+    [BurstCompile]
+    public unsafe void Execute(int index)
     {
+      int posSize = (halfPrecision ? 2 : 4);
+      int colorSize = (hasAlpha ? 4 : 3);
+      int byteSize = 3 * posSize + colorSize;
+      byte* src = (byte*)vertexIntermediateBuffer.GetUnsafeReadOnlyPtr() + index*byteSize;
+
+      float x, y, z;
+      if (halfPrecision)
+      {
+        x = *(half*)(src + 0) * boundsSize[0] + boundsCenter[0];
+        y = *(half*)(src + 2) * boundsSize[1] + boundsCenter[1];
+        z = *(half*)(src + 4) * boundsSize[2] + boundsCenter[2];
+        src += 6;
+      }
+      else
+      {
+        x = *(float*)(src + 0);
+        y = *(float*)(src + 4);
+        z = *(float*)(src + 8);
+        src += 12;
+      }
       
+      byte* dst = (byte*)vertexBuffer.GetUnsafePtr() + index*16;
+      *(float*)(dst + 0) = x;
+      *(float*)(dst + 4) = y;
+      *(float*)(dst + 8) = z;
+      dst[12] = *(src + 0);
+      dst[13] = *(src + 1);
+      dst[14] = *(src + 2);
+      dst[15] = (hasAlpha ? *(src + 3) : (byte)1);
     }
   }
 }

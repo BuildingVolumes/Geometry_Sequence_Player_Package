@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using Unity.Collections;
 using UnityEngine;
 
 namespace BuildingVolumes.Player
@@ -22,7 +23,9 @@ namespace BuildingVolumes.Player
     public int maxVertexCount;
     public int maxIndiceCount;
     public List<float> boundsCenter;
+    public NativeArray<float> boundsCenterNative; // we need the Native version to be able to pass to Jobs 
     public List<float> boundsSize;
+    public NativeArray<float> boundsSizeNative; // we need the Native version to be able to pass to Jobs 
     public int textureWidth;
     public int textureHeight;
     public int textureSizeDDS;
@@ -54,6 +57,16 @@ namespace BuildingVolumes.Player
       try
       {
         configuration = JsonUtility.FromJson<SequenceConfiguration>(content);
+        var boundsC = configuration.boundsCenter;
+        configuration.boundsCenterNative = new NativeArray<float>(3, Allocator.Persistent);
+        configuration.boundsCenterNative[0] = boundsC[0];
+        configuration.boundsCenterNative[1] = boundsC[1];
+        configuration.boundsCenterNative[2] = boundsC[2];
+        var boundsS = configuration.boundsSize;
+        configuration.boundsSizeNative = new NativeArray<float>(3, Allocator.Persistent);
+        configuration.boundsSizeNative[0] = boundsS[0];
+        configuration.boundsSizeNative[1] = boundsS[1];
+        configuration.boundsSizeNative[2] = boundsS[2];
       }
 
       catch (Exception e)
