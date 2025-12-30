@@ -1,7 +1,6 @@
 using System;
 using System.IO;
 using System.Collections.Generic;
-using System.Diagnostics.CodeAnalysis;
 using Unity.Collections;
 using UnityEngine;
 using Unity.Jobs;
@@ -15,7 +14,6 @@ using System.Threading;
 using Unity.Mathematics;
 using Unity.Burst;
 
-// ReSharper disable once CheckNamespace
 namespace BuildingVolumes.Player
 {
   public class Frame
@@ -35,23 +33,16 @@ namespace BuildingVolumes.Player
     public PostProcessJob postProcessJob;
     public JobHandle postProcessJobHandle;
 
-    public BufferState bufferState;
+    public BufferState bufferState = BufferState.Empty;
     public int readBufferSize;
     public int playbackIndex;
     public float finishedBufferingTime;
-
-    public Frame()
-    {
-      playbackIndex = 0;
-      bufferState = BufferState.Empty;
-    }
   }
 
   public enum TextureMode { None, Single, PerFrame };
 
   public enum BufferState { Empty, Consumed, Reading, Loading, Ready, Playing }
 
-  [SuppressMessage("ReSharper", "InconsistentNaming")]
   public class BufferedGeometryReader
   {
     public string folder;
@@ -67,7 +58,7 @@ namespace BuildingVolumes.Player
     public GameObject streamParent;
     public Material materialSource;
 
-    bool buffering = true;
+    private bool _buffering = true;
 
     /// <summary>
     /// Create a new buffered reader. 
@@ -228,7 +219,7 @@ namespace BuildingVolumes.Player
     public void BufferFrames(int targetPlaybackIndex, int lastPlaybackIndex)
     {
 
-      if (!buffering)
+      if (!_buffering)
         return;
 
       if (targetPlaybackIndex < 0 || targetPlaybackIndex > totalFrames)
@@ -291,7 +282,7 @@ namespace BuildingVolumes.Player
       SetupFrameForReading(frame, sequenceConfig, newPlaybackIndex);
       ScheduleGeometryReadJob(frame, plyFilePaths[newPlaybackIndex]);
       if (sequenceConfig.textureMode == SequenceConfiguration.TextureMode.PerFrame)
-        ScheduleTextureReadJob(frame, GetDeviceDependendentTexturePath(newPlaybackIndex));
+        ScheduleTextureReadJob(frame, GetDeviceDependentTexturePath(newPlaybackIndex));
 
     }
 
@@ -311,7 +302,6 @@ namespace BuildingVolumes.Player
       frame.bufferState = BufferState.Reading;
     }
 
-    // ReSharper disable once UnusedParameter.Local
     void AllocateFrame(Frame frame, SequenceConfiguration config, int bufferIndex)
     {
       frame.sequenceConfiguration.geometryType = config.geometryType;
@@ -321,7 +311,7 @@ namespace BuildingVolumes.Player
 
       //Allocate every frame with the highest amount of vertices and indices being used in this sequence. 
       //This way, we can re-use the meshArrays, instead of re-allocating them each frame
-      if (config.geometryType == GeometryType.point)
+      if (config.geometryType == GeometryType.Point)
       {
         int vertexSizeBytes = 4 * 4; //3 vertex position floats + 1 byte of color
         if (config.hasNormals)
@@ -495,7 +485,7 @@ namespace BuildingVolumes.Player
       }
     }
 
-    public string GetDeviceDependendentTexturePath(int playbackIndex)
+    public string GetDeviceDependentTexturePath(int playbackIndex)
     {
       SequenceConfiguration.TextureFormat format = GetDeviceDependentTextureFormat();
 
@@ -526,7 +516,7 @@ namespace BuildingVolumes.Player
     /// Schedules a Job that reads a .ply Pointcloud or mesh file from disk
     /// and loads it into memory.
     /// </summary>
-    /// <param name="frame">The frame into which to load the data. The meshdataarray needs to be initialized already</param>
+    /// <param name="frame">The frame into which to load the data. The mesh data array needs to be initialized already</param>
     /// <param name="plyPath">The absolute path to the .ply file </param>
     /// <returns></returns>
     public void ScheduleGeometryReadJob(Frame frame, string plyPath)
@@ -568,7 +558,7 @@ namespace BuildingVolumes.Player
     /// <summary>
     /// Schedules a job which loads a texture file from disk into memory
     /// </summary>
-    /// <param name="frame">The frame data into which the texture will be loaded. The textureBufferRaw needs to be intialized already </param>
+    /// <param name="frame">The frame data into which the texture will be loaded. The textureBufferRaw needs to be initialized already </param>
     /// <param name="texturePath"></param>
     /// <returns></returns>
     public void ScheduleTextureReadJob(Frame frame, string texturePath)
@@ -594,7 +584,7 @@ namespace BuildingVolumes.Player
     /// </summary>
     public void DisposeFrameBuffer(bool stopBuffering)
     {
-      buffering = !stopBuffering;
+      _buffering = !stopBuffering;
 
       if (frameBuffer != null)
       {
@@ -656,7 +646,7 @@ namespace BuildingVolumes.Player
       else
         unsafe { readVerticesCmd.Buffer = vertexBuffer.GetUnsafePtr(); }
 
-      if (geoType == GeometryType.point)
+      if (geoType == GeometryType.Point)
       {
         readVerticesCmd.Size = 3 * (halfPrecision ? 2 : 4); // Vertex Coords 
         readVerticesCmd.Size += hasAlpha ? 4 : 3; // Vertex Color
@@ -685,7 +675,7 @@ namespace BuildingVolumes.Player
 
       readVerticesHandle.Dispose();
 
-      if (geoType != GeometryType.point)
+      if (geoType != GeometryType.Point)
       {
         //Reading the index is a bit more tricky because each index line contains the number of indices in that line, which we don't want to include
         //So we first read it into a temporary array, and then copy only the indices
@@ -772,6 +762,7 @@ namespace BuildingVolumes.Player
     }
   }
 
+  [BurstCompile]
   public struct PostProcessJob : IJobParallelFor
   {
     [ReadOnly] public Vector3 boundsCenter;
@@ -782,7 +773,6 @@ namespace BuildingVolumes.Player
     [ReadOnly] public NativeArray<byte> vertexIntermediateBuffer;
     [WriteOnly] public NativeArray<byte> vertexBuffer;
 
-    [BurstCompile]
     public unsafe void Execute(int index)
     {
       int posSize = (halfPrecision ? 2 : 4);
@@ -813,7 +803,7 @@ namespace BuildingVolumes.Player
       dst[12] = *(src + 0);
       dst[13] = *(src + 1);
       dst[14] = *(src + 2);
-      dst[15] = (hasAlpha ? *(src + 3) : (byte)1);
+      dst[15] = 0;
     }
   }
 }

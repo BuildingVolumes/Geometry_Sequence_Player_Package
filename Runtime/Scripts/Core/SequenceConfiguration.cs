@@ -7,7 +7,7 @@ namespace BuildingVolumes.Player
 {
   public class SequenceConfiguration
   {
-    public enum GeometryType { point = 0, mesh = 1, texturedMesh = 2 };
+    public enum GeometryType { Point = 0, Mesh = 1, TexturedMesh = 2 };
     public enum TextureMode { None = 0, Single = 1, PerFrame = 2 };
     public enum TextureFormat { NotSupported = 0, DDS = 1, ASTC = 2 };
 

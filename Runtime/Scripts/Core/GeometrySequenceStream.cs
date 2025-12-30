@@ -108,7 +108,7 @@ namespace BuildingVolumes.Player
         pointRenderPath = PointcloudRenderPath.PolySpatial;
 #endif
 
-      if (bufferedReader.sequenceConfig.geometryType == SequenceConfiguration.GeometryType.point)
+      if (bufferedReader.sequenceConfig.geometryType == SequenceConfiguration.GeometryType.Point)
           pointcloudRenderer = SetupPointcloudRenderer(bufferedReader, pointRenderPath);
       else
           meshSequenceRenderer = SetupMeshSequenceRenderer(bufferedReader, pointRenderPath);
@@ -129,7 +129,7 @@ namespace BuildingVolumes.Player
       if (bufferedReader.totalFrames == 1)
       {
         bufferedReader.SetupFrameForReading(bufferedReader.frameBuffer[0], bufferedReader.sequenceConfig, 0);
-        bufferedReader.ScheduleGeometryReadJob(bufferedReader.frameBuffer[0], bufferedReader.GetDeviceDependendentTexturePath(0));
+        bufferedReader.ScheduleGeometryReadJob(bufferedReader.frameBuffer[0], bufferedReader.GetDeviceDependentTexturePath(0));
         bufferedReader.frameBuffer[0].geoJobHandle.Complete();
         ShowFrame(bufferedReader.frameBuffer[0]);
         return;
@@ -221,7 +221,7 @@ namespace BuildingVolumes.Player
     /// <param name="frame"></param>
     public void ShowFrame(Frame frame)
     {
-      if (bufferedReader.sequenceConfig.geometryType == SequenceConfiguration.GeometryType.point)
+      if (bufferedReader.sequenceConfig.geometryType == SequenceConfiguration.GeometryType.Point)
         pointcloudRenderer?.SetFrame(frame);
       else
         meshSequenceRenderer?.RenderFrame(frame);
@@ -290,7 +290,7 @@ namespace BuildingVolumes.Player
       if (reader.sequenceConfig.textureMode == SequenceConfiguration.TextureMode.Single)
       {
         reader.SetupFrameForReading(reader.frameBuffer[0], reader.sequenceConfig, 0);
-        reader.ScheduleTextureReadJob(reader.frameBuffer[0], reader.GetDeviceDependendentTexturePath(0));
+        reader.ScheduleTextureReadJob(reader.frameBuffer[0], reader.GetDeviceDependentTexturePath(0));
         reader.frameBuffer[0].textureJobHandle.Complete();
         msRenderer.ApplySingleTexture(reader.frameBuffer[0]);
       }
@@ -396,7 +396,7 @@ namespace BuildingVolumes.Player
         thumbnailReader.SetupFrameForReading(thumbnail, thumbnailReader.sequenceConfig, 0);
         thumbnailReader.ScheduleGeometryReadJob(thumbnail, thumbnailReader.plyFilePaths[0]);
 
-        if (thumbnailReader.sequenceConfig.geometryType == SequenceConfiguration.GeometryType.point)
+        if (thumbnailReader.sequenceConfig.geometryType == SequenceConfiguration.GeometryType.Point)
         {
           thumbnailPCRenderer = SetupPointcloudRenderer(thumbnailReader, pointRenderPath);
           thumbnailPCRenderer?.SetFrame(thumbnailReader.frameBuffer[0]);
@@ -408,7 +408,7 @@ namespace BuildingVolumes.Player
 
           if (thumbnailReader.sequenceConfig.textureMode != SequenceConfiguration.TextureMode.None)
           {
-            thumbnailReader.ScheduleTextureReadJob(thumbnail, thumbnailReader.GetDeviceDependendentTexturePath(0));
+            thumbnailReader.ScheduleTextureReadJob(thumbnail, thumbnailReader.GetDeviceDependentTexturePath(0));
           }
 
           thumbnailMeshRenderer?.RenderFrame(thumbnailReader.frameBuffer[0]);
