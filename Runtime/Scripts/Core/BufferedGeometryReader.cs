@@ -556,8 +556,8 @@ namespace BuildingVolumes.Player
       {
         frame.postProcessJob.halfPrecision = sequenceConfig.halfPrecision;
         frame.postProcessJob.hasAlpha = sequenceConfig.hasAlpha;
-        frame.postProcessJob.boundsCenter = sequenceConfig.boundsCenterNative;
-        frame.postProcessJob.boundsSize = sequenceConfig.boundsSizeNative;
+        frame.postProcessJob.boundsCenter = sequenceConfig.boundsCenter;
+        frame.postProcessJob.boundsSize = sequenceConfig.boundsSize;
         frame.postProcessJob.vertexBuffer = frame.vertexBufferRaw;
         frame.postProcessJob.vertexIntermediateBuffer = frame.vertexIntermediateBuffer;
         JobHandle postProcessDeps = JobHandle.CombineDependencies(frame.postProcessJobHandle, frame.geoJobHandle);
@@ -774,8 +774,8 @@ namespace BuildingVolumes.Player
 
   public struct PostProcessJob : IJobParallelFor
   {
-    [ReadOnly] public NativeArray<float> boundsCenter;
-    [ReadOnly] public NativeArray<float> boundsSize;
+    [ReadOnly] public Vector3 boundsCenter;
+    [ReadOnly] public Vector3 boundsSize;
     [ReadOnly] public bool hasAlpha;
     [ReadOnly] public bool halfPrecision;
     
@@ -793,9 +793,9 @@ namespace BuildingVolumes.Player
       float x, y, z;
       if (halfPrecision)
       {
-        x = *(half*)(src + 0) * boundsSize[0] + boundsCenter[0];
-        y = *(half*)(src + 2) * boundsSize[1] + boundsCenter[1];
-        z = *(half*)(src + 4) * boundsSize[2] + boundsCenter[2];
+        x = *(half*)(src + 0) * boundsSize.x + boundsCenter.x;
+        y = *(half*)(src + 2) * boundsSize.y + boundsCenter.y;
+        z = *(half*)(src + 4) * boundsSize.z + boundsCenter.z;
         src += 6;
       }
       else
