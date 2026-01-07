@@ -334,7 +334,7 @@ namespace BuildingVolumes.Player
     public void ShowSequence()
     {
       pointcloudRenderer?.Show();
-      meshSequenceRenderer.Show();
+      meshSequenceRenderer?.Show();
     }
 
     public void HideSequence()
