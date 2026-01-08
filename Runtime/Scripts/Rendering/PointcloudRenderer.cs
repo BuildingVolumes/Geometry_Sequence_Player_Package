@@ -157,8 +157,8 @@ namespace BuildingVolumes.Player
         return;
 
       frame.geoJobHandle.Complete();
-      if (configuration.halfPrecision || !configuration.hasAlpha)
-        frame.postProcessJobHandle.Complete();
+      if (configuration.useCompression)
+        frame.decompressionJobHandle.Complete();
 
       bufferIndex++;
       if (bufferIndex >= 3)
@@ -176,10 +176,10 @@ namespace BuildingVolumes.Player
       pointSourceCount = frame.geoJob.vertexCount;
       int byteStride = configuration.hasNormals ? sourceBufferByteStrideNormals : sourceBufferByteStride;
       NativeArray<byte> pointdataGPU = pointBuffer.LockBufferForWrite<byte>(0, pointBuffer.count * byteStride); //Locking buffer is faster than GraphicsBuffer.SetData;
-      if (configuration.halfPrecision || !configuration.hasAlpha)
+      if (configuration.useCompression)
       {
-        frame.postProcessJob.vertexBuffer.CopyTo(pointdataGPU);
-        pointBuffer.UnlockBufferAfterWrite<byte>(frame.postProcessJob.vertexBuffer.Length);
+        frame.decompressionJob.vertexBuffer.CopyTo(pointdataGPU);
+        pointBuffer.UnlockBufferAfterWrite<byte>(frame.decompressionJob.vertexBuffer.Length);
       }
       else
       {

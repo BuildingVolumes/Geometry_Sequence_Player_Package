@@ -30,8 +30,8 @@ namespace BuildingVolumes.Player
     public JobHandle geoJobHandle;
     public ReadTextureJob textureJob;
     public JobHandle textureJobHandle;
-    public PostProcessJob postProcessJob;
-    public JobHandle postProcessJobHandle;
+    public DecompressionJob decompressionJob;
+    public JobHandle decompressionJobHandle;
 
     public BufferState bufferState = BufferState.Empty;
     public int readBufferSize;
@@ -255,7 +255,7 @@ namespace BuildingVolumes.Player
       }
 
       //Check if we have any free buffer space to buffer more frames
-      foreach (var frame in frameBuffer)
+      foreach (Frame frame in frameBuffer)
       {
         //Check if the buffer is ready to load the next frame 
         if (frame.bufferState is BufferState.Consumed or BufferState.Empty && framesToBuffer.Count > 0)
@@ -307,7 +307,7 @@ namespace BuildingVolumes.Player
       frame.sequenceConfiguration.geometryType = config.geometryType;
       frame.geoJob = new ReadGeometryJob();
       frame.textureJob = new ReadTextureJob();
-      frame.postProcessJob = new PostProcessJob();
+      frame.decompressionJob = new DecompressionJob();
 
       //Allocate every frame with the highest amount of vertices and indices being used in this sequence. 
       //This way, we can re-use the meshArrays, instead of re-allocating them each frame
@@ -317,13 +317,14 @@ namespace BuildingVolumes.Player
         if (config.hasNormals)
           vertexSizeBytes += 3 * 4; //3 vertex normal floats
         int vertexIntermediateSizeBytes = 3 * 4;
-        if (!config.hasAlpha)
-          vertexIntermediateSizeBytes -= 1;
-        if (config.halfPrecision)
-          vertexIntermediateSizeBytes -= 2;
+        if (config.useCompression)
+          vertexIntermediateSizeBytes -= 3;
 
         frame.vertexBufferRaw = new NativeArray<byte>(config.maxVertexCount * vertexSizeBytes, Allocator.Persistent);
-        frame.vertexIntermediateBuffer = new NativeArray<byte>(config.maxVertexCount * vertexIntermediateSizeBytes, Allocator.Persistent);
+        if (config.useCompression)
+          frame.vertexIntermediateBuffer = new NativeArray<byte>(config.maxVertexCount * vertexIntermediateSizeBytes, Allocator.Persistent);
+        else
+          frame.vertexIntermediateBuffer = new NativeArray<byte>(0, Allocator.Persistent);
         frame.indiceBufferRaw = new NativeArray<byte>(1, Allocator.Persistent);
         frame.indiceIntermediateBuffer = new NativeArray<byte>(1, Allocator.Persistent);
       }
@@ -366,7 +367,7 @@ namespace BuildingVolumes.Player
       if (targetMaxFrame >= totalFrames)
         targetMaxFrame = targetMaxFrame % totalFrames;
 
-      foreach (var frame in frameBuffer)
+      foreach (Frame frame in frameBuffer)
       {
         bool dispose = false;
         int playbackIndex = frame.playbackIndex;
@@ -437,7 +438,7 @@ namespace BuildingVolumes.Player
     {
       int loadedFrames = 0;
 
-      foreach (var frame in frameBuffer)
+      foreach (Frame frame in frameBuffer)
       {
         if (IsFrameBuffered(frame))
           loadedFrames++;
@@ -526,8 +527,7 @@ namespace BuildingVolumes.Player
       frame.geoJob.geoType = frame.sequenceConfiguration.geometryType;
       frame.geoJob.hasUVs = frame.sequenceConfiguration.hasUVs;
       frame.geoJob.hasNormals = frame.sequenceConfiguration.hasNormals;
-      frame.geoJob.hasAlpha = frame.sequenceConfiguration.hasAlpha;
-      frame.geoJob.halfPrecision = frame.sequenceConfiguration.halfPrecision;
+      frame.geoJob.useCompression = frame.sequenceConfiguration.useCompression;
       frame.geoJob.headerSize = frame.sequenceConfiguration.headerSizes[frame.playbackIndex];
       frame.geoJob.vertexCount = frame.sequenceConfiguration.verticeCounts[frame.playbackIndex];
       frame.geoJob.indiceCount = frame.sequenceConfiguration.indiceCounts[frame.playbackIndex];
@@ -537,21 +537,19 @@ namespace BuildingVolumes.Player
       frame.geoJob.indiceBuffer = frame.indiceBufferRaw;
       frame.geoJob.indiceIntermediateBuffer = frame.indiceIntermediateBuffer;
       JobHandle geoDeps = frame.geoJobHandle;
-      if (sequenceConfig.halfPrecision || !sequenceConfig.hasAlpha)
-        geoDeps = JobHandle.CombineDependencies(geoDeps, frame.postProcessJobHandle);
+      if (frame.sequenceConfiguration.useCompression)
+        geoDeps = JobHandle.CombineDependencies(geoDeps, frame.decompressionJobHandle);
 
       frame.geoJobHandle = frame.geoJob.Schedule(geoDeps);
 
-      if (sequenceConfig.halfPrecision || !sequenceConfig.hasAlpha)
+      if (frame.sequenceConfiguration.useCompression)
       {
-        frame.postProcessJob.halfPrecision = sequenceConfig.halfPrecision;
-        frame.postProcessJob.hasAlpha = sequenceConfig.hasAlpha;
-        frame.postProcessJob.boundsCenter = sequenceConfig.boundsCenter;
-        frame.postProcessJob.boundsSize = sequenceConfig.boundsSize;
-        frame.postProcessJob.vertexBuffer = frame.vertexBufferRaw;
-        frame.postProcessJob.vertexIntermediateBuffer = frame.vertexIntermediateBuffer;
-        JobHandle postProcessDeps = JobHandle.CombineDependencies(frame.postProcessJobHandle, frame.geoJobHandle);
-        frame.postProcessJobHandle = frame.postProcessJob.Schedule(sequenceConfig.verticeCounts[frame.playbackIndex],1024, postProcessDeps);
+        frame.decompressionJob.boundsCenter = frame.sequenceConfiguration.boundsCenter;
+        frame.decompressionJob.boundsSize = frame.sequenceConfiguration.boundsSize;
+        frame.decompressionJob.vertexBuffer = frame.vertexBufferRaw;
+        frame.decompressionJob.vertexIntermediateBuffer = frame.vertexIntermediateBuffer;
+        JobHandle postProcessDeps = JobHandle.CombineDependencies(frame.decompressionJobHandle, frame.geoJobHandle);
+        frame.decompressionJobHandle = frame.decompressionJob.Schedule(frame.sequenceConfiguration.verticeCounts[frame.playbackIndex],1024, postProcessDeps);
       }
     }
 
@@ -588,10 +586,10 @@ namespace BuildingVolumes.Player
 
       if (frameBuffer != null)
       {
-        foreach (var frame in frameBuffer)
+        foreach (Frame frame in frameBuffer)
         {
           frame.geoJobHandle.Complete();
-          frame.postProcessJobHandle.Complete();
+          frame.decompressionJobHandle.Complete();
           frame.vertexBufferRaw.Dispose();
           frame.vertexIntermediateBuffer.Dispose();
           frame.indiceBufferRaw.Dispose();
@@ -614,8 +612,7 @@ namespace BuildingVolumes.Player
     [WriteOnly] public NativeArray<byte> indiceBuffer;
     [ReadOnly] public bool hasUVs;
     [ReadOnly] public bool hasNormals;
-    [ReadOnly] public bool hasAlpha;
-    [ReadOnly] public bool halfPrecision;
+    [ReadOnly] public bool useCompression;
     [ReadOnly] public bool readFinished;
     [ReadOnly] public int headerSize;
     [ReadOnly] public int vertexCount;
@@ -641,16 +638,13 @@ namespace BuildingVolumes.Player
       ReadCommand readVerticesCmd;
       ReadHandle readVerticesHandle;
       readVerticesCmd.Offset = headerSize;
-      if (!hasAlpha || halfPrecision)
+      if (useCompression)
         unsafe { readVerticesCmd.Buffer = vertexIntermediateBuffer.GetUnsafePtr(); }
       else
         unsafe { readVerticesCmd.Buffer = vertexBuffer.GetUnsafePtr(); }
 
       if (geoType == GeometryType.Point)
-      {
-        readVerticesCmd.Size = 3 * (halfPrecision ? 2 : 4); // Vertex Coords 
-        readVerticesCmd.Size += hasAlpha ? 4 : 3; // Vertex Color
-      }
+        readVerticesCmd.Size = useCompression ? 9 : 16;
       else
         readVerticesCmd.Size = 3 * 4;
 
@@ -763,38 +757,23 @@ namespace BuildingVolumes.Player
   }
 
   [BurstCompile]
-  public struct PostProcessJob : IJobParallelFor
+  public struct DecompressionJob : IJobParallelFor
   {
     [ReadOnly] public Vector3 boundsCenter;
     [ReadOnly] public Vector3 boundsSize;
-    [ReadOnly] public bool hasAlpha;
-    [ReadOnly] public bool halfPrecision;
     
     [ReadOnly] public NativeArray<byte> vertexIntermediateBuffer;
     [WriteOnly] public NativeArray<byte> vertexBuffer;
 
     public unsafe void Execute(int index)
     {
-      int posSize = (halfPrecision ? 2 : 4);
-      int colorSize = (hasAlpha ? 4 : 3);
-      int byteSize = 3 * posSize + colorSize;
+      const int byteSize = 9;
       byte* src = (byte*)vertexIntermediateBuffer.GetUnsafeReadOnlyPtr() + index*byteSize;
 
-      float x, y, z;
-      if (halfPrecision)
-      {
-        x = *(half*)(src + 0) * boundsSize.x + boundsCenter.x;
-        y = *(half*)(src + 2) * boundsSize.y + boundsCenter.y;
-        z = *(half*)(src + 4) * boundsSize.z + boundsCenter.z;
-        src += 6;
-      }
-      else
-      {
-        x = *(float*)(src + 0);
-        y = *(float*)(src + 4);
-        z = *(float*)(src + 8);
-        src += 12;
-      }
+      float x = *(half*)(src + 0) * boundsSize.x + boundsCenter.x;
+      float y = *(half*)(src + 2) * boundsSize.y + boundsCenter.y;
+      float z = *(half*)(src + 4) * boundsSize.z + boundsCenter.z;
+      src += 6;
       
       byte* dst = (byte*)vertexBuffer.GetUnsafePtr() + index*16;
       *(float*)(dst + 0) = x;
