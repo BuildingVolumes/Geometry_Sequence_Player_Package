@@ -189,6 +189,7 @@ namespace BuildingVolumes.Player
         return;
 
       frame.geoJobHandle.Complete();
+      frame.decompressionJobHandle.Complete();
       NativeArray<byte> pointdataGPU = pointSourceBuffer.LockBufferForWrite<byte>(0, frame.geoJob.vertexBuffer.Length); //Locking buffer is faster than GraphicsBuffer.SetData;
       frame.geoJob.vertexBuffer.CopyTo(pointdataGPU);
       pointSourceBuffer.UnlockBufferAfterWrite<byte>(frame.geoJob.vertexBuffer.Length);
