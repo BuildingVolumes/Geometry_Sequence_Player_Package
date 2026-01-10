@@ -313,18 +313,24 @@ namespace BuildingVolumes.Player
       //This way, we can re-use the meshArrays, instead of re-allocating them each frame
       if (config.geometryType == GeometryType.Point)
       {
-        int vertexSizeBytes = 4 * 4; //3 vertex position floats + 1 byte of color
+        int vertexSizeBytes = 4 * 4; //3 vertex position float32 + 1 uint32 of color
         if (config.hasNormals)
           vertexSizeBytes += 3 * 4; //3 vertex normal floats
-        int vertexIntermediateSizeBytes = 3 * 4;
-        if (config.useCompression)
-          vertexIntermediateSizeBytes -= 3;
-
         frame.vertexBufferRaw = new NativeArray<byte>(config.maxVertexCount * vertexSizeBytes, Allocator.Persistent);
+
         if (config.useCompression)
+        {
+          int vertexIntermediateSizeBytes = 3 * 2; //3 vertex position float16 
+          vertexIntermediateSizeBytes += 3; // + 3 color bytes
+          if (config.hasNormals)
+            vertexIntermediateSizeBytes += 3 * 2; //3 vertex normal float16
           frame.vertexIntermediateBuffer = new NativeArray<byte>(config.maxVertexCount * vertexIntermediateSizeBytes, Allocator.Persistent);
+        }
+
         else
           frame.vertexIntermediateBuffer = new NativeArray<byte>(0, Allocator.Persistent);
+
+
         frame.indiceBufferRaw = new NativeArray<byte>(1, Allocator.Persistent);
         frame.indiceIntermediateBuffer = new NativeArray<byte>(1, Allocator.Persistent);
       }
@@ -536,10 +542,10 @@ namespace BuildingVolumes.Player
       frame.geoJob.vertexIntermediateBuffer = frame.vertexIntermediateBuffer;
       frame.geoJob.indiceBuffer = frame.indiceBufferRaw;
       frame.geoJob.indiceIntermediateBuffer = frame.indiceIntermediateBuffer;
+
       JobHandle geoDeps = frame.geoJobHandle;
       if (frame.sequenceConfiguration.useCompression)
         geoDeps = JobHandle.CombineDependencies(geoDeps, frame.decompressionJobHandle);
-
       frame.geoJobHandle = frame.geoJob.Schedule(geoDeps);
 
       if (frame.sequenceConfiguration.useCompression)
@@ -548,6 +554,8 @@ namespace BuildingVolumes.Player
         frame.decompressionJob.boundsSize = frame.sequenceConfiguration.boundsSize;
         frame.decompressionJob.vertexBuffer = frame.vertexBufferRaw;
         frame.decompressionJob.vertexIntermediateBuffer = frame.vertexIntermediateBuffer;
+        frame.decompressionJob.hasNormals = frame.sequenceConfiguration.hasNormals;
+
         JobHandle postProcessDeps = JobHandle.CombineDependencies(frame.decompressionJobHandle, frame.geoJobHandle);
         frame.decompressionJobHandle = frame.decompressionJob.Schedule(frame.sequenceConfiguration.verticeCounts[frame.playbackIndex],1024, postProcessDeps);
       }
@@ -643,15 +651,15 @@ namespace BuildingVolumes.Player
       else
         unsafe { readVerticesCmd.Buffer = vertexBuffer.GetUnsafePtr(); }
 
+      //Size of the vertice positions
+      readVerticesCmd.Size = useCompression ? 3 * 2 : 3 * 4;
+      //Add vertex color size
       if (geoType == GeometryType.Point)
-        readVerticesCmd.Size = useCompression ? 9 : 16;
-      else
-        readVerticesCmd.Size = 3 * 4;
-
+        readVerticesCmd.Size += useCompression ? 3 : 4;
       if (hasUVs)
         readVerticesCmd.Size += 2 * 4;
       if (hasNormals)
-        readVerticesCmd.Size += 3 * 4;
+        readVerticesCmd.Size += useCompression? 3 * 2 : 3 * 4;
 
       readVerticesCmd.Size *= vertexCount;
 
@@ -761,28 +769,62 @@ namespace BuildingVolumes.Player
   {
     [ReadOnly] public Vector3 boundsCenter;
     [ReadOnly] public Vector3 boundsSize;
+    [ReadOnly] public bool hasNormals;
     
     [ReadOnly] public NativeArray<byte> vertexIntermediateBuffer;
     [WriteOnly] public NativeArray<byte> vertexBuffer;
 
     public unsafe void Execute(int index)
     {
-      const int byteSize = 9;
-      byte* src = (byte*)vertexIntermediateBuffer.GetUnsafeReadOnlyPtr() + index*byteSize;
+      int compressedVertexByteSize = hasNormals ? 15 : 9;
+      int uncompressedVertexByteSize = hasNormals ? 28 : 16;
+      
+      byte* src = (byte*)vertexIntermediateBuffer.GetUnsafeReadOnlyPtr() + index*compressedVertexByteSize;
 
+      //Read position halfs
       float x = *(half*)(src + 0) * boundsSize.x + boundsCenter.x;
       float y = *(half*)(src + 2) * boundsSize.y + boundsCenter.y;
       float z = *(half*)(src + 4) * boundsSize.z + boundsCenter.z;
       src += 6;
-      
-      byte* dst = (byte*)vertexBuffer.GetUnsafePtr() + index*16;
+
+      //Read optional normal halfs
+      float nx=0, ny=0, nz=0;
+      if (hasNormals)
+      {
+        nx = *(half*)(src + 0);
+        ny = *(half*)(src + 2);
+        nz = *(half*)(src + 4);
+        src += 6;
+      }
+
+      //Read color bytes
+      byte r = *(src + 0);
+      byte g = *(src + 1);
+      byte b = *(src + 2);
+
+
+      byte* dst = (byte*)vertexBuffer.GetUnsafePtr() + index*uncompressedVertexByteSize;
+
+      //Write position floats      
       *(float*)(dst + 0) = x;
       *(float*)(dst + 4) = y;
       *(float*)(dst + 8) = z;
-      dst[12] = *(src + 0);
-      dst[13] = *(src + 1);
-      dst[14] = *(src + 2);
-      dst[15] = 0;
+      dst += 12;
+
+      //Write optional normal floats
+      if (hasNormals)
+      {
+        *(float*)(dst + 0) = nx;
+        *(float*)(dst + 4) = ny;
+        *(float*)(dst + 8) = nz;
+        dst += 12;
+      }
+
+      //Write color bytes and add empty alpha channel for RGBA format
+      *(dst + 0) = r;
+      *(dst + 1) = g;
+      *(dst + 2) = b;
+      *(dst + 3) = 0;
     }
   }
 }
