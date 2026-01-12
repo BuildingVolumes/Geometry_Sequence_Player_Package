@@ -5,7 +5,9 @@
         "Unity.Timeline",
         "Unity.TextMeshPro",
         "Unity.PolySpatial",
-        "Unity.RenderPipelines.ShaderGraph.ShaderGraphLibrary"
+        "Unity.RenderPipelines.ShaderGraph.ShaderGraphLibrary",
+        "Unity.Mathematics",
+        "Unity.Burst"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

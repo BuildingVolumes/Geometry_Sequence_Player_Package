@@ -56,6 +56,7 @@ namespace BuildingVolumes.Player
     void ShowGeometryData(Frame frame, MeshFilter meshFilter)
     {
       frame.geoJobHandle.Complete();
+      frame.decompressionJobHandle.Complete();
 
       VertexAttributeDescriptor vp = new VertexAttributeDescriptor(VertexAttribute.Position, VertexAttributeFormat.Float32, 3);
       VertexAttributeDescriptor vn = new VertexAttributeDescriptor(VertexAttribute.Normal, VertexAttributeFormat.Float32, 3);
@@ -71,7 +72,17 @@ namespace BuildingVolumes.Player
       streamedMeshFilter.sharedMesh.SetVertexBufferParams(frame.sequenceConfiguration.maxVertexCount, vad.ToArray());
       streamedMeshFilter.sharedMesh.SetIndexBufferParams(frame.sequenceConfiguration.maxIndiceCount, IndexFormat.UInt32);
 
-      meshFilter.sharedMesh.SetVertexBufferData<byte>(frame.vertexBufferRaw, 0, 0, frame.vertexBufferRaw.Length);
+      if (frame.sequenceConfiguration.useCompression)
+      {
+        meshFilter.sharedMesh.SetVertexBufferData<byte>(frame.decompressionJob.vertexBuffer, 0, 0, frame.decompressionJob.vertexBuffer.Length);
+      }
+
+      else
+      {
+        meshFilter.sharedMesh.SetVertexBufferData<byte>(frame.vertexBufferRaw, 0, 0, frame.vertexBufferRaw.Length);
+      }
+
+
       meshFilter.sharedMesh.SetIndexBufferData<byte>(frame.indiceBufferRaw, 0, 0, frame.indiceBufferRaw.Length);
       meshFilter.sharedMesh.SetSubMesh(0, new SubMeshDescriptor(0, frame.sequenceConfiguration.indiceCounts[frame.playbackIndex]), MeshUpdateFlags.DontRecalculateBounds);
 
