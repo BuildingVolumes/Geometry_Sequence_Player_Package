@@ -111,6 +111,7 @@ namespace BuildingVolumes.Player
     void ShowGeometryData(Frame frame, MeshFilter meshFilter)
     {
       frame.geoJobHandle.Complete();
+      frame.decompressionJobHandle.Complete();
 
       VertexAttributeDescriptor vp = new VertexAttributeDescriptor(VertexAttribute.Position, VertexAttributeFormat.Float32, 3);
       VertexAttributeDescriptor vn = new VertexAttributeDescriptor(VertexAttribute.Normal, VertexAttributeFormat.Float32, 3);
