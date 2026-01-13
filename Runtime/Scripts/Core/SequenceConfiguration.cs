@@ -1,7 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
+using UnityEditor.PackageManager;
 using UnityEngine;
+using static UnityEngine.Audio.GeneratorInstance;
 
 namespace BuildingVolumes.Player
 {
@@ -11,6 +14,7 @@ namespace BuildingVolumes.Player
     public enum TextureMode { None = 0, Single = 1, PerFrame = 2 };
     public enum TextureFormat { NotSupported = 0, DDS = 1, ASTC = 2 };
 
+    public string sequenceVersion;
     public GeometryType geometryType;
     public TextureMode textureMode;
     public bool DDS;
@@ -67,6 +71,8 @@ namespace BuildingVolumes.Player
         return null;
       }
 
+      CheckSequenceVersion(configuration.sequenceVersion, path);
+
       return configuration;
     }
 
@@ -86,6 +92,34 @@ namespace BuildingVolumes.Player
 #else
             return TextureFormat.NotSupported;
 #endif
+    }
+
+    private static bool CheckSequenceVersion(string sequenceVersion, string path)
+    {
+      bool versionValid = false;
+
+      if (sequenceVersion != null)
+        if (sequenceVersion != string.Empty)
+          versionValid = true;
+
+      if (!versionValid)
+      {
+        Debug.LogError($"Could not validate sequence version of: {path}. Please make sure you've created this sequence using the latest converter version, " +
+          $"otherwise playback might not work correctly! <a href=\"https://github.com/BuildingVolumes/Unity_Geometry_Sequence_Player/releases\" line=\"2\">Update the converter here</a>");
+        return false;
+      }
+
+      string packageVersion = "1.2.2";
+
+      if (new Version(sequenceVersion).CompareTo(new Version(packageVersion)) < 0)
+      {
+        Debug.LogError($"The sequence was created with an outdated version of the Sequence Converter, which can lead to playback errors. " +
+         $"Please update the sequence converter and re-convert your sequences!  <a href=\"https://github.com/BuildingVolumes/Unity_Geometry_Sequence_Player/releases\" line=\"2\">Update the converter here</a>");
+        return false;
+      }
+
+      return true;
+
     }
   }
 }
