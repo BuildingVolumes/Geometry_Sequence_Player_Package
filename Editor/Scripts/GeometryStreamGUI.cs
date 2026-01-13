@@ -81,6 +81,8 @@ namespace BuildingVolumes.Player
       else
         instantiateMaterial.boolValue = true;
 
+      updateMaterial = EditorGUI.EndChangeCheck();
+
       GUILayout.Space(10);
 
       GUILayout.Label("Pointcloud Settings", EditorStyles.boldLabel);
@@ -109,7 +111,6 @@ namespace BuildingVolumes.Player
         EditorGUILayout.PropertyField(materialSlots, new GUIContent("Apply to texture slots: "));
         EditorGUILayout.PropertyField(customMaterialSlots, new GUIContent("Custom texture slots"));
       }
-      updateMaterial = EditorGUI.EndChangeCheck();
 
       GUILayout.Label("Playback Settings", EditorStyles.boldLabel);
 
