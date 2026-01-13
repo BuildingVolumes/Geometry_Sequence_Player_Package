@@ -13,6 +13,18 @@ weight: 420
 toc: true
 ---
 
+### Version 1.2.2
+
+This version contains several new features, contributed by [Anwar Lu](https://github.com/MrGcGamer):
+
+- **Converter Tool MacOS support:** The converter tool now supports MacOS as well (texture compression is not yet supported)
+- **Sequence Compression:** Sequences can now be compressed to around half their size!
+
+Fixes:
+
+- [Issue #9](https://github.com/BuildingVolumes/Unity_Geometry_Sequence_Player/issues/11)
+- Several small bug fixes and additions
+
 ### Version 1.2.1
 
 Version 1.2.1
