@@ -186,7 +186,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 5cf0cea7d11f9074c923a252044c4b61, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  sequencePath: Samples\Geometry Sequence Player\1.2.1\Sequence Samples\ExampleData\TexturedMesh_Sequence_Sample
+  sequencePath: Samples\Geometry Sequence Player\1.2.2\Sequence Samples\ExampleData\TexturedMesh_Sequence_Sample
 --- !u!114 &47858296
 MonoBehaviour:
   m_ObjectHideFlags: 0

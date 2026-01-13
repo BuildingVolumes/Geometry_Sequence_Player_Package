@@ -1,6 +1,6 @@
 {
   "name": "com.buildingvolumes.geometry_sequence_player",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "displayName": "Geometry Sequence Player",
   "description": "This package allows you to efficiently playback large geometry (pointcloud and mesh) sequences.",
   "unity": "2022.1",

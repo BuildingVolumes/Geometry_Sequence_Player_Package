@@ -278,7 +278,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e2731264125d1524693cb97001b1cfc1, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  relativePath: Samples\Geometry Sequence Player\1.2.1\Sequence Samples\ExampleData\TexturedMesh_Sequence_Sample
+  relativePath: Samples\Geometry Sequence Player\1.2.2\Sequence Samples\ExampleData\TexturedMesh_Sequence_Sample
   pathRelation: 1
   playAtStart: 1
   loopPlay: 1
