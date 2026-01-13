@@ -93,7 +93,8 @@ LightmapSettings:
     m_ExportTrainingData: 0
     m_TrainingDataDestination: TrainingData
     m_LightProbeSampleCountMultiplier: 4
-  m_LightingDataAsset: {fileID: 112000000, guid: 7f9b2c4a313a5174baffcfdabe4bda5d, type: 2}
+  m_LightingDataAsset: {fileID: 112000000, guid: 127f416ec71e9eb41ae62c51c62cbd7d,
+    type: 2}
   m_LightingSettings: {fileID: 1705581122}
 --- !u!196 &4
 NavMeshSettings:
@@ -180,6 +181,8 @@ MeshRenderer:
   m_RayTracingAccelStructBuildFlagsOverride: 0
   m_RayTracingAccelStructBuildFlags: 1
   m_SmallMeshCulling: 1
+  m_ForceMeshLod: -1
+  m_MeshLodSelectionBias: 0
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
@@ -201,9 +204,11 @@ MeshRenderer:
   m_AutoUVMaxDistance: 0.5
   m_AutoUVMaxAngle: 89
   m_LightmapParameters: {fileID: 0}
+  m_GlobalIlluminationMeshLod: 0
   m_SortingLayerID: 0
   m_SortingLayer: 0
   m_SortingOrder: 0
+  m_MaskInteraction: 0
   m_AdditionalVertexStreams: {fileID: 0}
 --- !u!33 &4998292
 MeshFilter:
@@ -256,7 +261,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 5.28, z: 0}
-  m_LocalScale: {x: 0.0069556404, y: 0.0069556404, z: 0.0069556404}
+  m_LocalScale: {x: 0.5, y: 0.5, z: 0.5}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
@@ -273,7 +278,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e2731264125d1524693cb97001b1cfc1, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  relativePath: Samples\Geometry Sequence Player\1.1.1\Sequence Samples\ExampleData\TexturedMesh_Sequence_Sample
+  relativePath: Samples\Geometry Sequence Player\1.2.2\Sequence Samples\ExampleData\TexturedMesh_Sequence_Sample
   pathRelation: 1
   playAtStart: 1
   loopPlay: 1
@@ -301,11 +306,12 @@ MonoBehaviour:
   threadCount: 4
   attachFrameDebugger: 0
   frameDebugger: {fileID: 0}
-  meshMaterial: {fileID: 2100000, guid: 817ccae3035334c4c916fcf9ad8b0cd4, type: 2}
+  customMaterial: {fileID: 0}
+  instantiateMaterial: 1
   materialSlots: 1
   customMaterialSlots: []
+  pointRenderPath: 1
   pointSize: 0.003
-  pointType: 0
   pointEmission: 1
   readerInitialized: 0
   frameDropped: 0
@@ -342,14 +348,14 @@ Light:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1420777152}
   m_Enabled: 1
-  serializedVersion: 11
+  serializedVersion: 12
   m_Type: 1
   m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_Intensity: 1
   m_Range: 10
   m_SpotAngle: 30
   m_InnerSpotAngle: 21.80208
-  m_CookieSize: 10
+  m_CookieSize2D: {x: 10, y: 10}
   m_Shadows:
     m_Type: 0
     m_Resolution: -1
@@ -421,7 +427,7 @@ LightingSettings:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_Name: Settings.lighting
-  serializedVersion: 9
+  serializedVersion: 10
   m_EnableBakedLightmaps: 1
   m_EnableRealtimeLightmaps: 1
   m_RealtimeEnvironmentLighting: 1
@@ -436,6 +442,12 @@ LightingSettings:
   m_BakeResolution: 40
   m_Padding: 2
   m_LightmapCompression: 3
+  m_LightmapPackingMode: 1
+  m_LightmapPackingMethod: 0
+  m_XAtlasPackingAttempts: 16384
+  m_XAtlasBruteForce: 0
+  m_XAtlasBlockAlign: 0
+  m_XAtlasRepackUnderutilizedLightmaps: 1
   m_AO: 0
   m_AOMaxDistance: 1
   m_CompAOExponent: 1
@@ -617,6 +629,7 @@ MonoBehaviour:
   ySpeed: 120
   yMinLimit: -20
   yMaxLimit: 80
+  autoRotateEnabled: 1
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

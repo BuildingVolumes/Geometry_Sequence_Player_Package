@@ -13,6 +13,41 @@ weight: 420
 toc: true
 ---
 
+### Version 1.2.2
+
+This version contains several new features, contributed by [Anwar Lu](https://github.com/MrGcGamer):
+
+- **Converter Tool MacOS support:** The converter tool now supports MacOS as well (texture compression is not yet supported)
+- **Sequence Compression:** Sequences can now be compressed to around half their size!
+
+Fixes:
+
+- [Issue #9](https://github.com/BuildingVolumes/Unity_Geometry_Sequence_Player/issues/11)
+- Several small bug fixes and additions
+
+### Version 1.2.1
+
+Version 1.2.1
+
+This version contains a small improvement for the rendering bounds of Sequences. The bounds were not correctly calculated in previous version, leading to the sequence not being correctly culled from the camera view.
+
+Fixes: #9
+
+⬇️ Please also update the Geometry Sequence Player package to the newest version!
+
+### Version 1.2.0
+
+This version focuses mostly on improvements of the pointcloud rendering ✨
+
+- **Custom Pointcloud Shaders**:  Custom shaders for pointclouds are now supported and can also be created with Unity Shadergraph
+- **Per-Point Sizes**:  Each point of a pointcloud can now have a unique size (Shadergraph only)
+- **Per-Point Normals**: Pointclouds sequences can now contain per-point normals
+- **Pointcloud Normal Estimation**: If needed, pointcloud normals can now be estimated with the Converter tool
+- **New sample**: A new sample that shows how to create custom shadergraphs for pointclouds
+- **Per-Vertex Normals**:  Mesh sequences can now also be exported with custom per-vertex normals
+
+⬇️ Please update to the [new Converter](https://github.com/BuildingVolumes/Unity_Geometry_Sequence_Player/releases), to be able to use the per-vertex normal features!
+
 ### Version 1.1.1
 
 Fixed Issues:
