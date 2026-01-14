@@ -294,7 +294,7 @@ namespace BuildingVolumes.Player
       if (isDisposed || !pcMeshRenderer)
         return;
 
-      pcMeshRenderer.enabled = true;
+      pcMeshRenderer.enabled = false;
     }
 
     GameObject CreateStreamObject(string name, Transform parent)
