@@ -273,7 +273,7 @@ namespace BuildingVolumes.Player
     {
       for (int i = 0; i < meshRenderers.Count; i++)
       {
-        meshRenderers[i].enabled = true;
+        meshRenderers[i].enabled = false;
       }
     }
 
