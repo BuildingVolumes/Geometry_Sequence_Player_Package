@@ -6,7 +6,7 @@ using System.Collections.Generic;
 using UnityEditor;
 
 
-#if UNITY_VISIONOS
+#if UNITY_VISIONOS && INCLUDE_UNITY_POLYSPATIAL
 using Unity.PolySpatial;
 #endif
 #if UNITY_EDITOR
@@ -102,7 +102,7 @@ namespace BuildingVolumes.Player
                 return readerInitialized;
 
             //On Polyspatial, we force the render path to a special variant for this system
-#if UNITY_VISIONOS
+#if UNITY_VISIONOS && INCLUDE_UNITY_POLYSPATIAL
       UnityEngine.Object volumeCam = UnityEngine.Object.FindFirstObjectByType<Unity.PolySpatial.VolumeCamera>();
       if (volumeCam != null)
         pointRenderPath = PointcloudRenderPath.PolySpatial;
