@@ -21,6 +21,11 @@
             "name": "com.unity.shadergraph",
             "expression": "13.0.0",
             "define": "SHADERGRAPH_AVAILABLE"
+        },
+        {
+            "name": "com.unity.polyspatial",
+            "expression": "2.0.0-pre.9",
+            "define": "INCLUDE_UNITY_POLYSPATIAL"
         }
     ],
     "noEngineReferences": false
