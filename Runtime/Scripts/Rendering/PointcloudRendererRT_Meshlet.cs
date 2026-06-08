@@ -197,7 +197,7 @@ namespace BuildingVolumes.Player
       int groupSize = Mathf.CeilToInt(rtPositions.width / 32f);
       computeShaderRT.Dispatch(0, groupSize, groupSize, 1);
 
-#if UNITY_VISIONOS
+#if UNITY_VISIONOS && INCLUDE_UNITY_POLYSPATIAL
         Unity.PolySpatial.PolySpatialObjectUtils.MarkDirty(rtPositions);
         Unity.PolySpatial.PolySpatialObjectUtils.MarkDirty(rtColors);
 #endif
